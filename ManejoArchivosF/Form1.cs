@@ -6,7 +6,7 @@ namespace ManejoArchivosF
 {
     public partial class Form1 : Form
     {
-        // ── Instancias de negocio ──────────────────────────────────
+        //Instancias de negocio para cada organización. El indexado s
         private readonly Secuencial _secuencial = new();
         private readonly Directo _directo = new();
         private IArchivoIndexado? _indexado;
