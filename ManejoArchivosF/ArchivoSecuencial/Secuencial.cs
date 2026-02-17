@@ -1,73 +1,66 @@
-﻿using System;
-using System.IO;
+﻿using System.IO;
 using System.Windows.Forms;
 
 namespace ManejoArchivosF.ArchivoSecuencial
 {
+    /// <summary>
+    /// Organización Secuencial: las entradas se leen y escriben en orden estricto.
+    /// Caso de uso: Bitácora de transacciones de caja se agregan al final y se leen completamente para generar reportes. No se requiere acceso directo a registros específicos, solo agregar y leer secuencialmente.
+    /// </summary>
     public class Secuencial
     {
         public string ArchivoActual { get; private set; } = "";
 
-        // ==================== CREAR ARCHIVO ====================
+        // CREAR ARCHIVO
         public void CrearArchivo(string rutaArchivo, DataGridView dgvDatos)
         {
             try
             {
-                if (dgvDatos.Rows.Count == 0 || string.IsNullOrWhiteSpace(dgvDatos.Rows[0].Cells[0].Value?.ToString()))
+                var lineas = ObtenerLineas(dgvDatos);
+
+                if (lineas.Count == 0)
                 {
-                    MessageBox.Show("Por favor, escriba algo antes de crear el archivo.",
+                    MessageBox.Show("Agregue al menos una transacción antes de crear el archivo.",
                         "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                using (StreamWriter writer = new StreamWriter(rutaArchivo))
-                {
-                    foreach (DataGridViewRow row in dgvDatos.Rows)
-                    {
-                        if (!row.IsNewRow && row.Cells[0].Value != null)
-                        {
-                            writer.WriteLine(row.Cells[0].Value.ToString());
-                        }
-                    }
-                }
+                using StreamWriter writer = new(rutaArchivo);
+                foreach (string linea in lineas)
+                    writer.WriteLine(linea);
 
                 ArchivoActual = rutaArchivo;
-                MessageBox.Show("Archivo creado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Bitácora creada exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al crear el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error al crear: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ==================== ABRIR ARCHIVO ====================
+        //ABRIR ARCHIVO 
         public void AbrirArchivo(string rutaArchivo, DataGridView dgvDatos)
         {
             try
             {
                 ArchivoActual = rutaArchivo;
-
                 dgvDatos.Rows.Clear();
 
-                using (StreamReader reader = new StreamReader(rutaArchivo))
-                {
-                    string linea;
+                using StreamReader reader = new(rutaArchivo);
+                string? linea;
+                while ((linea = reader.ReadLine()) != null)
+                    dgvDatos.Rows.Add(linea);
 
-                    while ((linea = reader.ReadLine()) != null)
-                    {
-                        dgvDatos.Rows.Add(linea);
-                    }
-                }
-
-                MessageBox.Show("Archivo abierto exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Bitácora abierta correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al abrir el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error al abrir: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ==================== MODIFICAR ARCHIVO ====================
+        //MODIFICAR ARCHIVO
+        /// <summary>Reescribe el archivo con el contenido actual del grid (acceso secuencial).</summary>
         public void ModificarArchivo(string rutaArchivo, DataGridView dgvDatos)
         {
             try
@@ -79,84 +72,65 @@ namespace ManejoArchivosF.ArchivoSecuencial
                 }
 
                 string archivoTemporal = rutaArchivo + ".tmp";
+                var lineas = ObtenerLineas(dgvDatos);
 
-                using (StreamWriter writer = new StreamWriter(archivoTemporal))
-                {
-                    foreach (DataGridViewRow row in dgvDatos.Rows)
-                    {
-                        if (!row.IsNewRow && row.Cells[0].Value != null)
-                        {
-                            writer.WriteLine(row.Cells[0].Value.ToString());
-                        }
-                    }
-                }
+                using (StreamWriter writer = new(archivoTemporal))
+                    foreach (string linea in lineas)
+                        writer.WriteLine(linea);
 
-                if (File.Exists(rutaArchivo))
-                {
-                    File.Delete(rutaArchivo);
-                }
-
+                if (File.Exists(rutaArchivo)) File.Delete(rutaArchivo);
                 File.Move(archivoTemporal, rutaArchivo);
 
                 ArchivoActual = rutaArchivo;
-
-                MessageBox.Show("Archivo modificado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al modificar el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error al guardar: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ==================== COPIAR ARCHIVO ====================
+        //COPIAR
         public void CopiarArchivo(string rutaOrigen, string rutaDestino)
         {
             try
             {
-                if (File.Exists(rutaDestino))
-                {
-                    File.Delete(rutaDestino);
-                }
-
+                if (File.Exists(rutaDestino)) File.Delete(rutaDestino);
                 File.Copy(rutaOrigen, rutaDestino);
-
-                MessageBox.Show("Archivo copiado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Bitácora copiada exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al copiar el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error al copiar: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ==================== MOVER ARCHIVO ====================
+        //mOVER
         public void MoverArchivo(string rutaOrigen, string rutaDestino)
         {
             try
             {
-                if (File.Exists(rutaDestino))
-                {
-                    File.Delete(rutaDestino);
-                }
-
+                if (File.Exists(rutaDestino)) File.Delete(rutaDestino);
                 File.Move(rutaOrigen, rutaDestino);
-
-                MessageBox.Show("Archivo movido exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ArchivoActual = rutaDestino;
+                MessageBox.Show("Bitácora movida exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al mover el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error al mover: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ==================== ELIMINAR ARCHIVO ====================
+        //ELLIMINAR 
         public void EliminarArchivo(string rutaArchivo)
         {
+
             try
             {
                 if (File.Exists(rutaArchivo))
                 {
                     File.Delete(rutaArchivo);
-                    MessageBox.Show("Archivo eliminado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ArchivoActual = "";
+                    MessageBox.Show("Bitácora eliminada.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
                 {
@@ -165,17 +139,16 @@ namespace ManejoArchivosF.ArchivoSecuencial
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al eliminar el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error al eliminar: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ==================== VER PROPIEDADES ====================
+        //PROPIEDADES
         public void CargarPropiedades(string rutaArchivo, DataGridView dgvPropiedades)
         {
             try
             {
-                FileInfo info = new FileInfo(rutaArchivo);
-
+                FileInfo info = new(rutaArchivo);
                 dgvPropiedades.Rows.Clear();
                 dgvPropiedades.Rows.Add("Tamaño", info.Length + " bytes");
                 dgvPropiedades.Rows.Add("Nombre", info.Name);
@@ -184,13 +157,28 @@ namespace ManejoArchivosF.ArchivoSecuencial
                 dgvPropiedades.Rows.Add("Último acceso", info.LastAccessTime.ToString());
                 dgvPropiedades.Rows.Add("Última modificación", info.LastWriteTime.ToString());
                 dgvPropiedades.Rows.Add("Atributos", info.Attributes.ToString());
-                dgvPropiedades.Rows.Add("Ubicación", info.FullName);
-                dgvPropiedades.Rows.Add("Carpeta contenedora", info.DirectoryName);
+                dgvPropiedades.Rows.Add("Ubicación completa", info.FullName);
+                dgvPropiedades.Rows.Add("Carpeta contenedora", info.DirectoryName ?? "");
+                dgvPropiedades.Rows.Add("Líneas totales", File.ReadAllLines(rutaArchivo).Length.ToString());
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Error al cargar propiedades: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        //HELPER PRIVADO 
+        private static List<string> ObtenerLineas(DataGridView grid)
+        {
+            var lineas = new List<string>();
+            foreach (DataGridViewRow row in grid.Rows)
+            {
+                if (row.IsNewRow) continue;
+                string? valor = row.Cells[0].Value?.ToString();
+                if (!string.IsNullOrWhiteSpace(valor))
+                    lineas.Add(valor);
+            }
+            return lineas;
         }
     }
 }

@@ -9,6 +9,11 @@ using System.Xml.Linq;
 
 namespace ManejoArchivosF.AccesoDirecto
 {
+    /// <summary>
+    /// Organización de Acceso Directo: se puede saltar directamente a cualquier registro por su ID
+    /// sin recorrer el archivo de forma secuencial.
+    /// Caso de uso: Catálogo de productos de ferretería acceso por código de artículo.
+    /// </summary>
     public class Directo
     {
         public string ArchivoActual { get; private set; } = string.Empty;
@@ -19,15 +24,15 @@ namespace ManejoArchivosF.AccesoDirecto
             public string Contenido { get; set; } = string.Empty;
         }
 
-        // ==================== CONFIGURAR GRID ====================
+        //CONFIGURAR GRID
         public void ConfigurarDataGridViews(DataGridView dgvDatos, DataGridView dgvPropiedades)
         {
             dgvDatos.AllowUserToAddRows = true;
             dgvDatos.AllowUserToDeleteRows = true;
             dgvDatos.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             dgvDatos.Columns.Clear();
-            dgvDatos.Columns.Add("Id", "Id de registro");
-            dgvDatos.Columns.Add("Contenido", "Contenido");
+            dgvDatos.Columns.Add("Id", "Código de producto");
+            dgvDatos.Columns.Add("Contenido", "Descripción | Precio | Stock");
 
             dgvPropiedades.AllowUserToAddRows = false;
             dgvPropiedades.AllowUserToDeleteRows = false;
@@ -37,43 +42,34 @@ namespace ManejoArchivosF.AccesoDirecto
             dgvPropiedades.Columns.Add("Valor", "Valor");
         }
 
-        // ==================== OBTENER REGISTROS DESDE GRID ====================
+        //OBTENER REGISTROS DESDE GRI
         public List<Registro> ObtenerRegistrosDesdeGrid(DataGridView grid)
         {
             List<Registro> registros = new();
 
             foreach (DataGridViewRow row in grid.Rows)
             {
-                if (row.IsNewRow)
-                    continue;
+                if (row.IsNewRow) continue;
 
                 if (!int.TryParse(row.Cells[0].Value?.ToString(), out int id) || id <= 0)
                     continue;
 
                 string contenido = row.Cells[1].Value?.ToString()?.Trim() ?? string.Empty;
-
-                registros.Add(new Registro
-                {
-                    Id = id,
-                    Contenido = contenido
-                });
+                registros.Add(new Registro { Id = id, Contenido = contenido });
             }
 
             return registros.OrderBy(r => r.Id).ToList();
         }
 
-        // ==================== CARGAR REGISTROS EN GRID ====================
+        //CARGAR REGISTROS EN GRID
         public void CargarRegistrosEnGrid(IEnumerable<Registro> registros, DataGridView grid)
         {
             grid.Rows.Clear();
-
             foreach (Registro registro in registros.OrderBy(r => r.Id))
-            {
                 grid.Rows.Add(registro.Id, registro.Contenido);
-            }
         }
 
-        // ==================== CSV HELPERS ====================
+        //CSV HELPERS
         private string EscapeCsv(string value)
         {
             string escaped = value.Replace("\"", "\"\"");
@@ -83,12 +79,8 @@ namespace ManejoArchivosF.AccesoDirecto
         private string LimpiarComillasCsv(string value)
         {
             string trimmed = value.Trim();
-
             if (trimmed.StartsWith('"') && trimmed.EndsWith('"') && trimmed.Length >= 2)
-            {
                 trimmed = trimmed[1..^1].Replace("\"\"", "\"");
-            }
-
             return trimmed;
         }
 
@@ -100,32 +92,18 @@ namespace ManejoArchivosF.AccesoDirecto
 
             foreach (char c in line)
             {
-                if (c == '"')
-                {
-                    inQuotes = !inQuotes;
-                    current.Append(c);
-                    continue;
-                }
-
-                if (c == ',' && !inQuotes)
-                {
-                    values.Add(current.ToString());
-                    current.Clear();
-                    continue;
-                }
-
+                if (c == '"') { inQuotes = !inQuotes; current.Append(c); continue; }
+                if (c == ',' && !inQuotes) { values.Add(current.ToString()); current.Clear(); continue; }
                 current.Append(c);
             }
-
             values.Add(current.ToString());
             return values.ToArray();
         }
 
-        // ==================== LECTURA GENERAL ====================
+        //   //////////////////////LECTURA GENERAL
         public List<Registro> LeerRegistros(string rutaArchivo)
         {
             string extension = Path.GetExtension(rutaArchivo).ToLowerInvariant();
-
             return extension switch
             {
                 ".txt" => LeerTxt(rutaArchivo),
@@ -136,209 +114,138 @@ namespace ManejoArchivosF.AccesoDirecto
             };
         }
 
-        // ==================== GUARDADO GENERAL ====================
+        // GUARDADO GENERAL
         public void GuardarRegistros(string rutaArchivo, List<Registro> registros)
         {
             string extension = Path.GetExtension(rutaArchivo).ToLowerInvariant();
-
             switch (extension)
             {
-                case ".txt":
-                    GuardarTxt(rutaArchivo, registros);
-                    break;
-
-                case ".csv":
-                    GuardarCsv(rutaArchivo, registros);
-                    break;
-
-                case ".json":
-                    GuardarJson(rutaArchivo, registros);
-                    break;
-
-                case ".xml":
-                    GuardarXml(rutaArchivo, registros);
-                    break;
-
-                default:
-                    throw new InvalidOperationException("Formato no soportado. Use TXT, CSV, JSON o XML.");
+                case ".txt": GuardarTxt(rutaArchivo, registros); break;
+                case ".csv": GuardarCsv(rutaArchivo, registros); break;
+                case ".json": GuardarJson(rutaArchivo, registros); break;
+                case ".xml": GuardarXml(rutaArchivo, registros); break;
+                default: throw new InvalidOperationException("Formato no soportado.");
             }
         }
 
-        // ==================== TXT ====================
+        //          TXT 
         private List<Registro> LeerTxt(string rutaArchivo)
         {
             List<Registro> registros = new();
-
-            if (!File.Exists(rutaArchivo))
-                return registros;
+            if (!File.Exists(rutaArchivo)) return registros;
 
             foreach (string line in File.ReadAllLines(rutaArchivo, Encoding.UTF8))
             {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-
+                if (string.IsNullOrWhiteSpace(line)) continue;
                 string[] partes = line.Split('|', 2);
-
-                if (partes.Length < 2 || !int.TryParse(partes[0], out int id) || id <= 0)
-                    continue;
-
+                if (partes.Length < 2 || !int.TryParse(partes[0], out int id) || id <= 0) continue;
                 registros.Add(new Registro { Id = id, Contenido = partes[1] });
             }
-
             return registros;
         }
 
         private void GuardarTxt(string rutaArchivo, List<Registro> registros)
         {
-            IEnumerable<string> lines = registros.OrderBy(r => r.Id)
-                .Select(r => $"{r.Id}|{r.Contenido}");
-
-            File.WriteAllLines(rutaArchivo, lines, Encoding.UTF8);
+            File.WriteAllLines(rutaArchivo,
+                registros.OrderBy(r => r.Id).Select(r => $"{r.Id}|{r.Contenido}"),
+                Encoding.UTF8);
         }
 
-        // ==================== CSV ====================
+        // CSV
         private List<Registro> LeerCsv(string rutaArchivo)
         {
             List<Registro> registros = new();
+            if (!File.Exists(rutaArchivo)) return registros;
 
-            if (!File.Exists(rutaArchivo))
-                return registros;
-
-            string[] lineas = File.ReadAllLines(rutaArchivo, Encoding.UTF8);
-
-            foreach (string linea in lineas.Skip(1))
+            foreach (string linea in File.ReadAllLines(rutaArchivo, Encoding.UTF8).Skip(1))
             {
-                if (string.IsNullOrWhiteSpace(linea))
-                    continue;
-
+                if (string.IsNullOrWhiteSpace(linea)) continue;
                 string[] campos = ParseCsvLine(linea);
-
-                if (campos.Length < 2)
-                    continue;
-
-                if (!int.TryParse(LimpiarComillasCsv(campos[0]), out int id) || id <= 0)
-                    continue;
-
-                registros.Add(new Registro
-                {
-                    Id = id,
-                    Contenido = LimpiarComillasCsv(campos[1])
-                });
+                if (campos.Length < 2) continue;
+                if (!int.TryParse(LimpiarComillasCsv(campos[0]), out int id) || id <= 0) continue;
+                registros.Add(new Registro { Id = id, Contenido = LimpiarComillasCsv(campos[1]) });
             }
-
             return registros;
         }
 
         private void GuardarCsv(string rutaArchivo, List<Registro> registros)
         {
             List<string> lineas = new() { "Id,Contenido" };
-
-            foreach (Registro registro in registros.OrderBy(r => r.Id))
-            {
-                lineas.Add($"{registro.Id},{EscapeCsv(registro.Contenido)}");
-            }
-
+            foreach (Registro r in registros.OrderBy(r => r.Id))
+                lineas.Add($"{r.Id},{EscapeCsv(r.Contenido)}");
             File.WriteAllLines(rutaArchivo, lineas, Encoding.UTF8);
         }
 
-        // ==================== JSON ====================
+        //             JSON
         private List<Registro> LeerJson(string rutaArchivo)
         {
-            if (!File.Exists(rutaArchivo))
-                return new List<Registro>();
-
+            if (!File.Exists(rutaArchivo)) return new();
             string json = File.ReadAllText(rutaArchivo, Encoding.UTF8);
-
-            if (string.IsNullOrWhiteSpace(json))
-                return new List<Registro>();
-
-            List<Registro>? registros = JsonSerializer.Deserialize<List<Registro>>(json);
-
-            return registros?.Where(r => r.Id > 0).ToList() ?? new List<Registro>();
+            if (string.IsNullOrWhiteSpace(json)) return new();
+            return JsonSerializer.Deserialize<List<Registro>>(json)?.Where(r => r.Id > 0).ToList() ?? new();
         }
 
         private void GuardarJson(string rutaArchivo, List<Registro> registros)
         {
-            JsonSerializerOptions options = new() { WriteIndented = true };
-
-            string json = JsonSerializer.Serialize(registros.OrderBy(r => r.Id), options);
-
-            File.WriteAllText(rutaArchivo, json, Encoding.UTF8);
+            File.WriteAllText(rutaArchivo,
+                JsonSerializer.Serialize(registros.OrderBy(r => r.Id), new JsonSerializerOptions { WriteIndented = true }),
+                Encoding.UTF8);
         }
 
-        // ==================== XML ====================
+        //             XML
         private List<Registro> LeerXml(string rutaArchivo)
         {
-            List<Registro> registros = new();
-
-            if (!File.Exists(rutaArchivo))
-                return registros;
-
+            if (!File.Exists(rutaArchivo)) return new();
             XDocument doc = XDocument.Load(rutaArchivo);
-
-            IEnumerable<Registro> result = doc.Root?
-                .Elements("Registro")
+            return (doc.Root?.Elements("Registro")
                 .Select(x => new Registro
                 {
                     Id = (int?)x.Element("Id") ?? 0,
                     Contenido = (string?)x.Element("Contenido") ?? string.Empty
                 })
-                .Where(r => r.Id > 0) ?? Enumerable.Empty<Registro>();
-
-            return result.ToList();
+                .Where(r => r.Id > 0) ?? Enumerable.Empty<Registro>()).ToList();
         }
 
         private void GuardarXml(string rutaArchivo, List<Registro> registros)
         {
-            XDocument doc = new(
+            new XDocument(
                 new XElement("Registros",
                     registros.OrderBy(r => r.Id).Select(r =>
                         new XElement("Registro",
                             new XElement("Id", r.Id),
-                            new XElement("Contenido", r.Contenido)))));
-
-            doc.Save(rutaArchivo);
+                            new XElement("Contenido", r.Contenido))))).Save(rutaArchivo);
         }
 
-        // ==================== CREAR ====================
+        //   CREAR
         public void CrearArchivo(string rutaArchivo, DataGridView dgvDatos)
         {
             List<Registro> registros = ObtenerRegistrosDesdeGrid(dgvDatos);
             GuardarRegistros(rutaArchivo, registros);
-
             ArchivoActual = rutaArchivo;
-
-            MessageBox.Show("Archivo creado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Catálogo creado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ==================== ABRIR ====================
+        //    ABRIR
         public void AbrirArchivo(string rutaArchivo, DataGridView dgvDatos)
         {
             ArchivoActual = rutaArchivo;
-
-            List<Registro> registros = LeerRegistros(rutaArchivo);
-
-            CargarRegistrosEnGrid(registros, dgvDatos);
-
-            MessageBox.Show("Archivo cargado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            CargarRegistrosEnGrid(LeerRegistros(rutaArchivo), dgvDatos);
+            MessageBox.Show("Catálogo cargado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ==================== MODIFICAR ====================
+        //        MODIFICAR 
         public void ModificarArchivo(DataGridView dgvDatos)
         {
             if (string.IsNullOrWhiteSpace(ArchivoActual) || !File.Exists(ArchivoActual))
             {
-                MessageBox.Show("Primero abra o cree un archivo.", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Primero abra o cree un catálogo.", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-
-            List<Registro> registros = ObtenerRegistrosDesdeGrid(dgvDatos);
-            GuardarRegistros(ArchivoActual, registros);
-
-            MessageBox.Show("Archivo actualizado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            GuardarRegistros(ArchivoActual, ObtenerRegistrosDesdeGrid(dgvDatos));
+            MessageBox.Show("Catálogo actualizado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ==================== ELIMINAR CONTENIDO ====================
+        ///ELIMINAR FILA 
         public void EliminarContenido(DataGridView dgvDatos)
         {
             if (dgvDatos.CurrentRow == null || dgvDatos.CurrentRow.IsNewRow)
@@ -346,12 +253,11 @@ namespace ManejoArchivosF.AccesoDirecto
                 MessageBox.Show("Seleccione una fila para eliminar.", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-
             dgvDatos.Rows.RemoveAt(dgvDatos.CurrentRow.Index);
             ModificarArchivo(dgvDatos);
         }
 
-        // ==================== ELIMINAR ARCHIVO ====================
+        //              ELIMINAR ARCHIVO
         public void EliminarArchivo(string rutaArchivo)
         {
             if (!File.Exists(rutaArchivo))
@@ -359,30 +265,30 @@ namespace ManejoArchivosF.AccesoDirecto
                 MessageBox.Show("El archivo no existe.", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-
             File.Delete(rutaArchivo);
-            MessageBox.Show("Archivo eliminado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ArchivoActual = string.Empty;
+            MessageBox.Show("Catálogo eliminado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ==================== COPIAR ====================
+        //COPIAR 
         public void CopiarArchivo(string rutaOrigen, string rutaDestino)
         {
             File.Copy(rutaOrigen, rutaDestino, true);
-            MessageBox.Show("Archivo copiado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Catálogo copiado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ==================== MOVER ====================
+        //        MOVER 
         public void MoverArchivo(string rutaOrigen, string rutaDestino)
         {
             File.Move(rutaOrigen, rutaDestino, true);
-            MessageBox.Show("Archivo movido exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ArchivoActual = rutaDestino;
+            MessageBox.Show("Catálogo movido exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ==================== PROPIEDADES ====================
+        //    PROPIEDADES 
         public void VerPropiedades(string rutaArchivo, DataGridView dgvPropiedades)
         {
             FileInfo info = new(rutaArchivo);
-
             dgvPropiedades.Rows.Clear();
             dgvPropiedades.Rows.Add("Tamaño", info.Length + " bytes");
             dgvPropiedades.Rows.Add("Nombre", info.Name);
@@ -393,6 +299,10 @@ namespace ManejoArchivosF.AccesoDirecto
             dgvPropiedades.Rows.Add("Atributos", info.Attributes.ToString());
             dgvPropiedades.Rows.Add("Ubicación", info.FullName);
             dgvPropiedades.Rows.Add("Carpeta contenedora", info.DirectoryName);
+
+            // Mostrar cantidad de registros (acceso directo: contar sin procesar todo)
+            int total = LeerRegistros(rutaArchivo).Count;
+            dgvPropiedades.Rows.Add("Total de productos", total.ToString());
         }
     }
 }

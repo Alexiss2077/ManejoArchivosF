@@ -1,5 +1,4 @@
-﻿using Microsoft.Win32;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,21 +7,17 @@ using System.Text;
 namespace ManejoArchivosF.Indexado
 {
     /// <summary>
-    /// Implementación de archivo indexado usando formato CSV (Comma Separated Values)
-    /// Incluye encabezados en la primera línea
+    /// Organización Indexada en CSV.
+    /// Encabezado: ID,Nombre,Edad,Email,Activo
+    /// Índice separado: .idx.csv
     /// </summary>
     public class IndexadoCSV : IArchivoIndexado
     {
         private string rutaArchivoDatos = "";
         private string rutaArchivoIndice = "";
-        private Dictionary<string, EntradaIndice> indice;
-        private const char DELIMITADOR = ',';
-        private const char COMILLA = '"';
-
-        public IndexadoCSV()
-        {
-            indice = new Dictionary<string, EntradaIndice>();
-        }
+        private Dictionary<string, EntradaIndice> indice = new();
+        private const char D = ',';
+        private const char Q = '"';
 
         public void CrearArchivo(string rutaArchivo, List<Registro> registros)
         {
@@ -30,39 +25,17 @@ namespace ManejoArchivosF.Indexado
             rutaArchivoIndice = rutaArchivo + ".idx.csv";
             indice.Clear();
 
-            // Verificar que no haya IDs duplicados
-            var idsUnicos = registros.Select(r => r.ID).Distinct().ToList();
-            if (idsUnicos.Count != registros.Count)
+            var ids = registros.Select(r => r.ID).Distinct().ToList();
+            if (ids.Count != registros.Count) throw new Exception("Hay IDs duplicados en los registros.");
+
+            using StreamWriter w = new(rutaArchivoDatos, false, Encoding.UTF8);
+            w.WriteLine("ID,Nombre,Edad,Email,Activo");
+            long n = 1;
+            foreach (var r in registros)
             {
-                throw new Exception("Hay IDs duplicados en los registros");
+                w.WriteLine(Formatear(r));
+                indice[r.ID] = new EntradaIndice { Clave = r.ID, Posicion = n++, Activo = true };
             }
-
-            // Crear archivo de datos con encabezados
-            using (StreamWriter writer = new StreamWriter(rutaArchivoDatos, false, Encoding.UTF8))
-            {
-                // Escribir encabezados
-                writer.WriteLine("ID,Nombre,Edad,Email,Activo");
-
-                long lineNumber = 1; // Línea 0 es el encabezado
-
-                foreach (var registro in registros)
-                {
-                    string linea = FormatearRegistroCSV(registro);
-                    writer.WriteLine(linea);
-
-                    // Agregar entrada al índice
-                    indice[registro.ID] = new EntradaIndice
-                    {
-                        Clave = registro.ID,
-                        Posicion = lineNumber,
-                        Activo = true
-                    };
-
-                    lineNumber++;
-                }
-            }
-
-            // Guardar índice
             GuardarIndice();
         }
 
@@ -70,318 +43,154 @@ namespace ManejoArchivosF.Indexado
         {
             rutaArchivoDatos = rutaArchivo;
             rutaArchivoIndice = rutaArchivo + ".idx.csv";
-
-            if (!File.Exists(rutaArchivoDatos))
-                throw new FileNotFoundException($"No se encuentra el archivo de datos: {rutaArchivoDatos}");
-
-            if (!File.Exists(rutaArchivoIndice))
-                throw new FileNotFoundException($"No se encuentra el archivo de índice: {rutaArchivoIndice}");
-
-            // Cargar índice
+            if (!File.Exists(rutaArchivoDatos)) throw new FileNotFoundException("No se encuentra el archivo de datos.");
+            if (!File.Exists(rutaArchivoIndice)) throw new FileNotFoundException("No se encuentra el archivo de índice.");
             CargarIndice();
         }
 
         public Registro? BuscarRegistro(string id)
         {
-            if (!indice.ContainsKey(id))
-                return null;
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                return null;
-
-            // Leer el registro desde la línea indicada
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            if (entrada.Posicion >= lineas.Length)
-                return null;
-
-            string linea = lineas[entrada.Posicion];
-            Registro registro = ParsearLineaCSV(linea);
-
-            return registro.Activo ? registro : null;
+            if (!indice.TryGetValue(id, out var e) || !e.Activo) return null;
+            var lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
+            if (e.Posicion >= lineas.Length) return null;
+            var r = Parsear(lineas[e.Posicion]);
+            return r.Activo ? r : null;
         }
 
         public void InsertarRegistro(Registro registro)
         {
-            if (indice.ContainsKey(registro.ID))
-                throw new Exception($"Ya existe un registro con ID: {registro.ID}");
-
-            // Obtener el número de líneas actual
-            long lineNumber = File.ReadLines(rutaArchivoDatos, Encoding.UTF8).Count();
-
-            // Agregar al final del archivo
-            using (StreamWriter writer = new StreamWriter(rutaArchivoDatos, true, Encoding.UTF8))
-            {
-                string linea = FormatearRegistroCSV(registro);
-                writer.WriteLine(linea);
-            }
-
-            // Agregar entrada al índice
-            indice[registro.ID] = new EntradaIndice
-            {
-                Clave = registro.ID,
-                Posicion = lineNumber,
-                Activo = true
-            };
-
-            // Guardar índice actualizado
+            if (indice.ContainsKey(registro.ID)) throw new Exception($"Ya existe un registro con ID: {registro.ID}");
+            long n = File.ReadLines(rutaArchivoDatos, Encoding.UTF8).Count();
+            using StreamWriter w = new(rutaArchivoDatos, true, Encoding.UTF8);
+            w.WriteLine(Formatear(registro));
+            indice[registro.ID] = new EntradaIndice { Clave = registro.ID, Posicion = n, Activo = true };
             GuardarIndice();
         }
 
-        public void ModificarRegistro(string id, Registro nuevoRegistro)
+        public void ModificarRegistro(string id, Registro nuevo)
         {
-            if (!indice.ContainsKey(id))
-                throw new Exception($"No existe un registro con ID: {id}");
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                throw new Exception($"El registro con ID {id} está eliminado");
-
-            nuevoRegistro.ID = id;
-            nuevoRegistro.Activo = true;
-
-            // Leer todas las líneas
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            // Modificar la línea específica
-            if (entrada.Posicion < lineas.Length)
-            {
-                lineas[entrada.Posicion] = FormatearRegistroCSV(nuevoRegistro);
-            }
-
-            // Reescribir el archivo
+            if (!indice.TryGetValue(id, out var e)) throw new Exception($"No existe un registro con ID: {id}");
+            if (!e.Activo) throw new Exception($"El registro {id} está eliminado.");
+            nuevo.ID = id; nuevo.Activo = true;
+            var lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
+            if (e.Posicion < lineas.Length) lineas[e.Posicion] = Formatear(nuevo);
             File.WriteAllLines(rutaArchivoDatos, lineas, Encoding.UTF8);
         }
 
         public bool EliminarRegistro(string id)
         {
-            if (!indice.ContainsKey(id))
-                return false;
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                return false;
-
-            // Marcar como inactivo en el índice
-            entrada.Activo = false;
-
-            // Marcar como inactivo en el archivo
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            if (entrada.Posicion < lineas.Length)
+            if (!indice.TryGetValue(id, out var e) || !e.Activo) return false;
+            e.Activo = false;
+            var lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
+            if (e.Posicion < lineas.Length)
             {
-                Registro registro = ParsearLineaCSV(lineas[entrada.Posicion]);
-                registro.Activo = false;
-                lineas[entrada.Posicion] = FormatearRegistroCSV(registro);
+                var r = Parsear(lineas[e.Posicion]);
+                r.Activo = false;
+                lineas[e.Posicion] = Formatear(r);
             }
-
             File.WriteAllLines(rutaArchivoDatos, lineas, Encoding.UTF8);
-
-            // Guardar índice actualizado
             GuardarIndice();
-
             return true;
         }
 
         public List<Registro> LeerTodosLosRegistros()
         {
-            List<Registro> registros = new List<Registro>();
-
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            // Saltar la primera línea (encabezados)
-            for (int i = 1; i < lineas.Length; i++)
-            {
-                string linea = lineas[i];
-
-                if (string.IsNullOrWhiteSpace(linea))
-                    continue;
-
-                Registro registro = ParsearLineaCSV(linea);
-
-                if (registro.Activo)
-                {
-                    registros.Add(registro);
-                }
-            }
-
-            return registros;
+            return File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8)
+                .Skip(1)
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .Select(Parsear)
+                .Where(r => r.Activo)
+                .ToList();
         }
 
         public int Reorganizar()
         {
-            List<Registro> registrosActivos = LeerTodosLosRegistros();
-            int registrosEliminados = indice.Count - registrosActivos.Count;
-
-            // Crear archivo temporal
-            string archivoTemp = rutaArchivoDatos + ".tmp";
-
+            var activos = LeerTodosLosRegistros();
+            int eliminados = indice.Count - activos.Count;
+            string tmp = rutaArchivoDatos + ".tmp";
             indice.Clear();
-
-            using (StreamWriter writer = new StreamWriter(archivoTemp, false, Encoding.UTF8))
+            using (StreamWriter w = new(tmp, false, Encoding.UTF8))
             {
-                // Escribir encabezados
-                writer.WriteLine("ID,Nombre,Edad,Email,Activo");
-
-                long lineNumber = 1;
-
-                foreach (var registro in registrosActivos)
+                w.WriteLine("ID,Nombre,Edad,Email,Activo");
+                long n = 1;
+                foreach (var r in activos)
                 {
-                    string linea = FormatearRegistroCSV(registro);
-                    writer.WriteLine(linea);
-
-                    indice[registro.ID] = new EntradaIndice
-                    {
-                        Clave = registro.ID,
-                        Posicion = lineNumber,
-                        Activo = true
-                    };
-
-                    lineNumber++;
+                    w.WriteLine(Formatear(r));
+                    indice[r.ID] = new EntradaIndice { Clave = r.ID, Posicion = n++, Activo = true };
                 }
             }
-
-            // Reemplazar archivo original
             File.Delete(rutaArchivoDatos);
-            File.Move(archivoTemp, rutaArchivoDatos);
-
-            // Guardar índice reorganizado
+            File.Move(tmp, rutaArchivoDatos);
             GuardarIndice();
-
-            return registrosEliminados;
+            return eliminados;
         }
 
-        public Dictionary<string, EntradaIndice> ObtenerIndice()
-        {
-            return new Dictionary<string, EntradaIndice>(indice);
-        }
+        public Dictionary<string, EntradaIndice> ObtenerIndice() => new(indice);
 
+        //Privados
         private void GuardarIndice()
         {
-            using (StreamWriter writer = new StreamWriter(rutaArchivoIndice, false, Encoding.UTF8))
-            {
-                // Escribir encabezados
-                writer.WriteLine("Clave,Posicion,Activo");
-
-                foreach (var entrada in indice.Values)
-                {
-                    string linea = $"{EscaparCSV(entrada.Clave)},{entrada.Posicion},{(entrada.Activo ? "1" : "0")}";
-                    writer.WriteLine(linea);
-                }
-            }
+            using StreamWriter w = new(rutaArchivoIndice, false, Encoding.UTF8);
+            w.WriteLine("Clave,Posicion,Activo");
+            foreach (var e in indice.Values)
+                w.WriteLine($"{EscQ(e.Clave)},{e.Posicion},{(e.Activo ? "1" : "0")}");
         }
 
         private void CargarIndice()
         {
             indice.Clear();
-
-            string[] lineas = File.ReadAllLines(rutaArchivoIndice, Encoding.UTF8);
-
-            // Saltar la primera línea (encabezados)
-            for (int i = 1; i < lineas.Length; i++)
+            foreach (string linea in File.ReadAllLines(rutaArchivoIndice, Encoding.UTF8).Skip(1))
             {
-                string linea = lineas[i];
-
-                if (string.IsNullOrWhiteSpace(linea))
-                    continue;
-
-                List<string> partes = ParsearLineaCSVCompleta(linea);
-
-                if (partes.Count >= 3)
-                {
-                    EntradaIndice entrada = new EntradaIndice
-                    {
-                        Clave = partes[0],
-                        Posicion = long.Parse(partes[1]),
-                        Activo = partes[2] == "1"
-                    };
-
-                    indice[entrada.Clave] = entrada;
-                }
+                if (string.IsNullOrWhiteSpace(linea)) continue;
+                var p = ParseLine(linea);
+                if (p.Count >= 3)
+                    indice[p[0]] = new EntradaIndice { Clave = p[0], Posicion = long.Parse(p[1]), Activo = p[2] == "1" };
             }
         }
 
-        private Registro ParsearLineaCSV(string linea)
+        private Registro Parsear(string linea)
         {
-            List<string> partes = ParsearLineaCSVCompleta(linea);
-
-            if (partes.Count < 5)
-                throw new FormatException($"Formato de línea CSV inválido: {linea}");
-
+            var p = ParseLine(linea);
+            if (p.Count < 5) throw new FormatException($"Línea CSV inválida: {linea}");
             return new Registro
             {
-                ID = partes[0],
-                Nombre = partes[1],
-                Edad = int.Parse(partes[2]),
-                Email = partes[3],
-                Activo = partes[4] == "1"
+                ID = p[0],
+                Nombre = p[1],
+                Edad = int.Parse(p[2]),
+                Email = p[3],
+                Activo = p[4] == "1"
             };
         }
 
-        private List<string> ParsearLineaCSVCompleta(string linea)
-        {
-            List<string> campos = new List<string>();
-            StringBuilder campoActual = new StringBuilder();
-            bool dentroDeComillas = false;
+        private string Formatear(Registro r) =>
+            $"{EscQ(r.ID)},{EscQ(r.Nombre)},{r.Edad},{EscQ(r.Email)},{(r.Activo ? "1" : "0")}";
 
+        private string EscQ(string t)
+        {
+            if (string.IsNullOrEmpty(t)) return t;
+            if (t.Contains(D) || t.Contains(Q) || t.Contains('\n'))
+                return $"{Q}{t.Replace(Q.ToString(), $"{Q}{Q}")}{Q}";
+            return t;
+        }
+
+        private List<string> ParseLine(string linea)
+        {
+            var campos = new List<string>();
+            var sb = new StringBuilder();
+            bool inQ = false;
             for (int i = 0; i < linea.Length; i++)
             {
                 char c = linea[i];
-
-                if (c == COMILLA)
+                if (c == Q)
                 {
-                    // Verificar si es una comilla de escape
-                    if (dentroDeComillas && i + 1 < linea.Length && linea[i + 1] == COMILLA)
-                    {
-                        campoActual.Append(COMILLA);
-                        i++; // Saltar la siguiente comilla
-                    }
-                    else
-                    {
-                        dentroDeComillas = !dentroDeComillas;
-                    }
+                    if (inQ && i + 1 < linea.Length && linea[i + 1] == Q) { sb.Append(Q); i++; }
+                    else inQ = !inQ;
                 }
-                else if (c == DELIMITADOR && !dentroDeComillas)
-                {
-                    campos.Add(campoActual.ToString());
-                    campoActual.Clear();
-                }
-                else
-                {
-                    campoActual.Append(c);
-                }
+                else if (c == D && !inQ) { campos.Add(sb.ToString()); sb.Clear(); }
+                else sb.Append(c);
             }
-
-            // Agregar el último campo
-            campos.Add(campoActual.ToString());
-
+            campos.Add(sb.ToString());
             return campos;
-        }
-
-        private string FormatearRegistroCSV(Registro registro)
-        {
-            return $"{EscaparCSV(registro.ID)},{EscaparCSV(registro.Nombre)},{registro.Edad}," +
-                   $"{EscaparCSV(registro.Email)},{(registro.Activo ? "1" : "0")}";
-        }
-
-        private string EscaparCSV(string texto)
-        {
-            if (string.IsNullOrEmpty(texto))
-                return texto;
-
-            // Si contiene coma, comilla o salto de línea, encerrar en comillas
-            if (texto.Contains(DELIMITADOR) || texto.Contains(COMILLA) || texto.Contains('\n') || texto.Contains('\r'))
-            {
-                // Escapar comillas duplicándolas
-                texto = texto.Replace(COMILLA.ToString(), $"{COMILLA}{COMILLA}");
-                return $"{COMILLA}{texto}{COMILLA}";
-            }
-
-            return texto;
         }
     }
 }

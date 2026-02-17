@@ -1,5 +1,4 @@
-﻿using Microsoft.Win32;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,18 +7,15 @@ using System.Xml.Linq;
 namespace ManejoArchivosF.Indexado
 {
     /// <summary>
-    /// Implementación de archivo indexado usando formato XML
+    /// Organización Indexada en XML.
+    /// Archivo de datos XML + índice separado (.idx.xml).
+    /// La "posición" es el índice del nodo dentro del elemento raíz.
     /// </summary>
     public class IndexadoXML : IArchivoIndexado
     {
         private string rutaArchivoDatos = "";
         private string rutaArchivoIndice = "";
-        private Dictionary<string, EntradaIndice> indice;
-
-        public IndexadoXML()
-        {
-            indice = new Dictionary<string, EntradaIndice>();
-        }
+        private Dictionary<string, EntradaIndice> indice = new();
 
         public void CrearArchivo(string rutaArchivo, List<Registro> registros)
         {
@@ -27,49 +23,17 @@ namespace ManejoArchivosF.Indexado
             rutaArchivoIndice = rutaArchivo + ".idx.xml";
             indice.Clear();
 
-            // Verificar que no haya IDs duplicados
-            var idsUnicos = registros.Select(r => r.ID).Distinct().ToList();
-            if (idsUnicos.Count != registros.Count)
+            var ids = registros.Select(r => r.ID).Distinct().ToList();
+            if (ids.Count != registros.Count) throw new Exception("Hay IDs duplicados en los registros.");
+
+            var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), new XElement("Registros"));
+            long pos = 0;
+            foreach (var r in registros)
             {
-                throw new Exception("Hay IDs duplicados en los registros");
+                doc.Root!.Add(ElementoDeRegistro(r));
+                indice[r.ID] = new EntradaIndice { Clave = r.ID, Posicion = pos++, Activo = true };
             }
-
-            // Crear documento XML
-            XDocument doc = new XDocument(
-                new XDeclaration("1.0", "utf-8", "yes"),
-                new XElement("Registros")
-            );
-
-            XElement root = doc.Root!;
-            long posicion = 0;
-
-            foreach (var registro in registros)
-            {
-                XElement registroElement = new XElement("Registro",
-                    new XElement("ID", registro.ID),
-                    new XElement("Nombre", registro.Nombre),
-                    new XElement("Edad", registro.Edad),
-                    new XElement("Email", registro.Email),
-                    new XElement("Activo", registro.Activo ? "1" : "0")
-                );
-
-                root.Add(registroElement);
-
-                // Agregar entrada al índice (posición = índice del elemento en la colección)
-                indice[registro.ID] = new EntradaIndice
-                {
-                    Clave = registro.ID,
-                    Posicion = posicion,
-                    Activo = true
-                };
-
-                posicion++;
-            }
-
-            // Guardar documento
             doc.Save(rutaArchivoDatos);
-
-            // Guardar índice
             GuardarIndice();
         }
 
@@ -77,295 +41,130 @@ namespace ManejoArchivosF.Indexado
         {
             rutaArchivoDatos = rutaArchivo;
             rutaArchivoIndice = rutaArchivo + ".idx.xml";
-
-            if (!File.Exists(rutaArchivoDatos))
-                throw new FileNotFoundException($"No se encuentra el archivo de datos: {rutaArchivoDatos}");
-
-            if (!File.Exists(rutaArchivoIndice))
-                throw new FileNotFoundException($"No se encuentra el archivo de índice: {rutaArchivoIndice}");
-
-            // Cargar índice
+            if (!File.Exists(rutaArchivoDatos)) throw new FileNotFoundException("No se encuentra el archivo de datos.");
+            if (!File.Exists(rutaArchivoIndice)) throw new FileNotFoundException("No se encuentra el archivo de índice.");
             CargarIndice();
         }
 
         public Registro? BuscarRegistro(string id)
         {
-            if (!indice.ContainsKey(id))
-                return null;
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                return null;
-
-            // Cargar documento XML
-            XDocument doc = XDocument.Load(rutaArchivoDatos);
-            XElement? root = doc.Root;
-
-            if (root == null)
-                return null;
-
-            // Buscar el elemento en la posición indicada
-            var elementos = root.Elements("Registro").ToList();
-
-            if (entrada.Posicion >= elementos.Count)
-                return null;
-
-            XElement registroElement = elementos[(int)entrada.Posicion];
-            Registro registro = ParsearElementoRegistro(registroElement);
-
-            return registro.Activo ? registro : null;
+            if (!indice.TryGetValue(id, out var e) || !e.Activo) return null;
+            var elementos = XDocument.Load(rutaArchivoDatos).Root!.Elements("Registro").ToList();
+            if (e.Posicion >= elementos.Count) return null;
+            var r = RegistroDeElemento(elementos[(int)e.Posicion]);
+            return r.Activo ? r : null;
         }
 
         public void InsertarRegistro(Registro registro)
         {
-            if (indice.ContainsKey(registro.ID))
-                throw new Exception($"Ya existe un registro con ID: {registro.ID}");
-
-            // Cargar documento XML
-            XDocument doc = XDocument.Load(rutaArchivoDatos);
-            XElement? root = doc.Root;
-
-            if (root == null)
-                throw new Exception("El documento XML no tiene un elemento raíz válido");
-
-            // Obtener la posición actual (número de elementos)
-            long posicion = root.Elements("Registro").Count();
-
-            // Crear nuevo elemento
-            XElement nuevoRegistroElement = new XElement("Registro",
-                new XElement("ID", registro.ID),
-                new XElement("Nombre", registro.Nombre),
-                new XElement("Edad", registro.Edad),
-                new XElement("Email", registro.Email),
-                new XElement("Activo", registro.Activo ? "1" : "0")
-            );
-
-            root.Add(nuevoRegistroElement);
-
-            // Guardar documento
+            if (indice.ContainsKey(registro.ID)) throw new Exception($"Ya existe un registro con ID: {registro.ID}");
+            var doc = XDocument.Load(rutaArchivoDatos);
+            long pos = doc.Root!.Elements("Registro").Count();
+            doc.Root.Add(ElementoDeRegistro(registro));
             doc.Save(rutaArchivoDatos);
-
-            // Agregar entrada al índice
-            indice[registro.ID] = new EntradaIndice
-            {
-                Clave = registro.ID,
-                Posicion = posicion,
-                Activo = true
-            };
-
-            // Guardar índice actualizado
+            indice[registro.ID] = new EntradaIndice { Clave = registro.ID, Posicion = pos, Activo = true };
             GuardarIndice();
         }
 
-        public void ModificarRegistro(string id, Registro nuevoRegistro)
+        public void ModificarRegistro(string id, Registro nuevo)
         {
-            if (!indice.ContainsKey(id))
-                throw new Exception($"No existe un registro con ID: {id}");
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                throw new Exception($"El registro con ID {id} está eliminado");
-
-            nuevoRegistro.ID = id;
-            nuevoRegistro.Activo = true;
-
-            // Cargar documento XML
-            XDocument doc = XDocument.Load(rutaArchivoDatos);
-            XElement? root = doc.Root;
-
-            if (root == null)
-                return;
-
-            // Buscar el elemento en la posición indicada
-            var elementos = root.Elements("Registro").ToList();
-
-            if (entrada.Posicion < elementos.Count)
+            if (!indice.TryGetValue(id, out var e)) throw new Exception($"No existe un registro con ID: {id}");
+            if (!e.Activo) throw new Exception($"El registro {id} está eliminado.");
+            nuevo.ID = id; nuevo.Activo = true;
+            var doc = XDocument.Load(rutaArchivoDatos);
+            var elementos = doc.Root!.Elements("Registro").ToList();
+            if (e.Posicion < elementos.Count)
             {
-                XElement registroElement = elementos[(int)entrada.Posicion];
-
-                // Actualizar valores
-                registroElement.Element("ID")!.Value = nuevoRegistro.ID;
-                registroElement.Element("Nombre")!.Value = nuevoRegistro.Nombre;
-                registroElement.Element("Edad")!.Value = nuevoRegistro.Edad.ToString();
-                registroElement.Element("Email")!.Value = nuevoRegistro.Email;
-                registroElement.Element("Activo")!.Value = "1";
+                var el = elementos[(int)e.Posicion];
+                el.Element("ID")!.Value = nuevo.ID;
+                el.Element("Nombre")!.Value = nuevo.Nombre;
+                el.Element("Edad")!.Value = nuevo.Edad.ToString();
+                el.Element("Email")!.Value = nuevo.Email;
+                el.Element("Activo")!.Value = "1";
             }
-
-            // Guardar documento
             doc.Save(rutaArchivoDatos);
         }
 
         public bool EliminarRegistro(string id)
         {
-            if (!indice.ContainsKey(id))
-                return false;
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                return false;
-
-            // Marcar como inactivo en el índice
-            entrada.Activo = false;
-
-            // Cargar documento XML
-            XDocument doc = XDocument.Load(rutaArchivoDatos);
-            XElement? root = doc.Root;
-
-            if (root == null)
-                return false;
-
-            // Buscar el elemento en la posición indicada
-            var elementos = root.Elements("Registro").ToList();
-
-            if (entrada.Posicion < elementos.Count)
-            {
-                XElement registroElement = elementos[(int)entrada.Posicion];
-                registroElement.Element("Activo")!.Value = "0";
-            }
-
-            // Guardar documento
+            if (!indice.TryGetValue(id, out var e) || !e.Activo) return false;
+            e.Activo = false;
+            var doc = XDocument.Load(rutaArchivoDatos);
+            var elementos = doc.Root!.Elements("Registro").ToList();
+            if (e.Posicion < elementos.Count)
+                elementos[(int)e.Posicion].Element("Activo")!.Value = "0";
             doc.Save(rutaArchivoDatos);
-
-            // Guardar índice actualizado
             GuardarIndice();
-
             return true;
         }
 
         public List<Registro> LeerTodosLosRegistros()
         {
-            List<Registro> registros = new List<Registro>();
-
-            // Cargar documento XML
-            XDocument doc = XDocument.Load(rutaArchivoDatos);
-            XElement? root = doc.Root;
-
-            if (root == null)
-                return registros;
-
-            foreach (XElement registroElement in root.Elements("Registro"))
-            {
-                Registro registro = ParsearElementoRegistro(registroElement);
-
-                if (registro.Activo)
-                {
-                    registros.Add(registro);
-                }
-            }
-
-            return registros;
+            return XDocument.Load(rutaArchivoDatos).Root!
+                .Elements("Registro")
+                .Select(RegistroDeElemento)
+                .Where(r => r.Activo)
+                .ToList();
         }
 
         public int Reorganizar()
         {
-            List<Registro> registrosActivos = LeerTodosLosRegistros();
-            int registrosEliminados = indice.Count - registrosActivos.Count;
-
-            // Crear nuevo documento XML
-            XDocument doc = new XDocument(
-                new XDeclaration("1.0", "utf-8", "yes"),
-                new XElement("Registros")
-            );
-
-            XElement root = doc.Root!;
+            var activos = LeerTodosLosRegistros();
+            int eliminados = indice.Count - activos.Count;
             indice.Clear();
-            long posicion = 0;
-
-            foreach (var registro in registrosActivos)
+            var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), new XElement("Registros"));
+            long pos = 0;
+            foreach (var r in activos)
             {
-                XElement registroElement = new XElement("Registro",
-                    new XElement("ID", registro.ID),
-                    new XElement("Nombre", registro.Nombre),
-                    new XElement("Edad", registro.Edad),
-                    new XElement("Email", registro.Email),
-                    new XElement("Activo", "1")
-                );
-
-                root.Add(registroElement);
-
-                indice[registro.ID] = new EntradaIndice
-                {
-                    Clave = registro.ID,
-                    Posicion = posicion,
-                    Activo = true
-                };
-
-                posicion++;
+                doc.Root!.Add(ElementoDeRegistro(r));
+                indice[r.ID] = new EntradaIndice { Clave = r.ID, Posicion = pos++, Activo = true };
             }
-
-            // Guardar documento
             doc.Save(rutaArchivoDatos);
-
-            // Guardar índice reorganizado
             GuardarIndice();
-
-            return registrosEliminados;
+            return eliminados;
         }
 
-        public Dictionary<string, EntradaIndice> ObtenerIndice()
-        {
-            return new Dictionary<string, EntradaIndice>(indice);
-        }
+        public Dictionary<string, EntradaIndice> ObtenerIndice() => new(indice);
 
+        // ── Privados
         private void GuardarIndice()
         {
-            XDocument doc = new XDocument(
-                new XDeclaration("1.0", "utf-8", "yes"),
-                new XElement("Indice")
-            );
-
-            XElement root = doc.Root!;
-
-            foreach (var entrada in indice.Values)
-            {
-                XElement entradaElement = new XElement("Entrada",
-                    new XElement("Clave", entrada.Clave),
-                    new XElement("Posicion", entrada.Posicion),
-                    new XElement("Activo", entrada.Activo ? "1" : "0")
-                );
-
-                root.Add(entradaElement);
-            }
-
+            var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), new XElement("Indice"));
+            foreach (var e in indice.Values)
+                doc.Root!.Add(new XElement("Entrada",
+                    new XElement("Clave", e.Clave),
+                    new XElement("Posicion", e.Posicion),
+                    new XElement("Activo", e.Activo ? "1" : "0")));
             doc.Save(rutaArchivoIndice);
         }
 
         private void CargarIndice()
         {
             indice.Clear();
-
-            XDocument doc = XDocument.Load(rutaArchivoIndice);
-            XElement? root = doc.Root;
-
-            if (root == null)
-                return;
-
-            foreach (XElement entradaElement in root.Elements("Entrada"))
-            {
-                EntradaIndice entrada = new EntradaIndice
+            foreach (var el in XDocument.Load(rutaArchivoIndice).Root!.Elements("Entrada"))
+                indice[el.Element("Clave")!.Value] = new EntradaIndice
                 {
-                    Clave = entradaElement.Element("Clave")!.Value,
-                    Posicion = long.Parse(entradaElement.Element("Posicion")!.Value),
-                    Activo = entradaElement.Element("Activo")!.Value == "1"
+                    Clave = el.Element("Clave")!.Value,
+                    Posicion = long.Parse(el.Element("Posicion")!.Value),
+                    Activo = el.Element("Activo")!.Value == "1"
                 };
-
-                indice[entrada.Clave] = entrada;
-            }
         }
 
-        private Registro ParsearElementoRegistro(XElement registroElement)
+        private static XElement ElementoDeRegistro(Registro r) =>
+            new("Registro",
+                new XElement("ID", r.ID),
+                new XElement("Nombre", r.Nombre),
+                new XElement("Edad", r.Edad),
+                new XElement("Email", r.Email),
+                new XElement("Activo", r.Activo ? "1" : "0"));
+
+        private static Registro RegistroDeElemento(XElement el) => new()
         {
-            return new Registro
-            {
-                ID = registroElement.Element("ID")!.Value,
-                Nombre = registroElement.Element("Nombre")!.Value,
-                Edad = int.Parse(registroElement.Element("Edad")!.Value),
-                Email = registroElement.Element("Email")!.Value,
-                Activo = registroElement.Element("Activo")!.Value == "1"
-            };
-        }
+            ID = el.Element("ID")!.Value,
+            Nombre = el.Element("Nombre")!.Value,
+            Edad = int.Parse(el.Element("Edad")!.Value),
+            Email = el.Element("Email")!.Value,
+            Activo = el.Element("Activo")!.Value == "1"
+        };
     }
 }

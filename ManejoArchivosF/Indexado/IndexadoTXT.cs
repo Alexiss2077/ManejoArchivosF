@@ -1,5 +1,4 @@
-﻿using Microsoft.Win32;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,21 +7,16 @@ using System.Text;
 namespace ManejoArchivosF.Indexado
 {
     /// <summary>
-    /// Implementación de archivo indexado usando formato TXT (texto plano con delimitadores)
-    /// Formato de datos: ID|Nombre|Edad|Email|Activo
-    /// Formato de índice: Clave|Posicion|Activo
+    /// Organización Indexada en TXT.
+    /// Formato datos:  ID|Nombre|Edad|Email|Activo
+    /// Formato índice: Clave|Posicion|Activo  (.idx.txt)
     /// </summary>
     public class IndexadoTXT : IArchivoIndexado
     {
         private string rutaArchivoDatos = "";
         private string rutaArchivoIndice = "";
-        private Dictionary<string, EntradaIndice> indice;
-        private const char DELIMITADOR = '|';
-
-        public IndexadoTXT()
-        {
-            indice = new Dictionary<string, EntradaIndice>();
-        }
+        private Dictionary<string, EntradaIndice> indice = new();
+        private const char D = '|';
 
         public void CrearArchivo(string rutaArchivo, List<Registro> registros)
         {
@@ -30,41 +24,16 @@ namespace ManejoArchivosF.Indexado
             rutaArchivoIndice = rutaArchivo + ".idx.txt";
             indice.Clear();
 
-            // Verificar que no haya IDs duplicados
-            var idsUnicos = registros.Select(r => r.ID).Distinct().ToList();
-            if (idsUnicos.Count != registros.Count)
+            var ids = registros.Select(r => r.ID).Distinct().ToList();
+            if (ids.Count != registros.Count) throw new Exception("Hay IDs duplicados en los registros.");
+
+            using StreamWriter w = new(rutaArchivoDatos, false, Encoding.UTF8);
+            long n = 0;
+            foreach (var r in registros)
             {
-                throw new Exception("Hay IDs duplicados en los registros");
+                w.WriteLine(Formatear(r));
+                indice[r.ID] = new EntradaIndice { Clave = r.ID, Posicion = n++, Activo = true };
             }
-
-            // Crear archivo de datos
-            using (StreamWriter writer = new StreamWriter(rutaArchivoDatos, false, Encoding.UTF8))
-            {
-                long lineNumber = 0;
-
-                foreach (var registro in registros)
-                {
-                    // Escribir registro: ID|Nombre|Edad|Email|Activo
-                    string linea = $"{EscaparTexto(registro.ID)}{DELIMITADOR}" +
-                                 $"{EscaparTexto(registro.Nombre)}{DELIMITADOR}" +
-                                 $"{registro.Edad}{DELIMITADOR}" +
-                                 $"{EscaparTexto(registro.Email)}{DELIMITADOR}" +
-                                 $"{(registro.Activo ? "1" : "0")}";
-                    writer.WriteLine(linea);
-
-                    // Agregar entrada al índice
-                    indice[registro.ID] = new EntradaIndice
-                    {
-                        Clave = registro.ID,
-                        Posicion = lineNumber,
-                        Activo = true
-                    };
-
-                    lineNumber++;
-                }
-            }
-
-            // Guardar índice
             GuardarIndice();
         }
 
@@ -72,276 +41,131 @@ namespace ManejoArchivosF.Indexado
         {
             rutaArchivoDatos = rutaArchivo;
             rutaArchivoIndice = rutaArchivo + ".idx.txt";
-
-            if (!File.Exists(rutaArchivoDatos))
-                throw new FileNotFoundException($"No se encuentra el archivo de datos: {rutaArchivoDatos}");
-
-            if (!File.Exists(rutaArchivoIndice))
-                throw new FileNotFoundException($"No se encuentra el archivo de índice: {rutaArchivoIndice}");
-
-            // Cargar índice
+            if (!File.Exists(rutaArchivoDatos)) throw new FileNotFoundException("No se encuentra el archivo de datos.");
+            if (!File.Exists(rutaArchivoIndice)) throw new FileNotFoundException("No se encuentra el archivo de índice.");
             CargarIndice();
         }
 
         public Registro? BuscarRegistro(string id)
         {
-            if (!indice.ContainsKey(id))
-                return null;
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                return null;
-
-            // Leer el registro desde la línea indicada
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            if (entrada.Posicion >= lineas.Length)
-                return null;
-
-            string linea = lineas[entrada.Posicion];
-            Registro registro = ParsearLineaRegistro(linea);
-
-            return registro.Activo ? registro : null;
+            if (!indice.TryGetValue(id, out var e) || !e.Activo) return null;
+            var lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
+            if (e.Posicion >= lineas.Length) return null;
+            var r = Parsear(lineas[e.Posicion]);
+            return r.Activo ? r : null;
         }
 
         public void InsertarRegistro(Registro registro)
         {
-            if (indice.ContainsKey(registro.ID))
-                throw new Exception($"Ya existe un registro con ID: {registro.ID}");
-
-            // Obtener el número de líneas actual
-            long lineNumber = File.ReadLines(rutaArchivoDatos, Encoding.UTF8).Count();
-
-            // Agregar al final del archivo
-            using (StreamWriter writer = new StreamWriter(rutaArchivoDatos, true, Encoding.UTF8))
-            {
-                string linea = $"{EscaparTexto(registro.ID)}{DELIMITADOR}" +
-                             $"{EscaparTexto(registro.Nombre)}{DELIMITADOR}" +
-                             $"{registro.Edad}{DELIMITADOR}" +
-                             $"{EscaparTexto(registro.Email)}{DELIMITADOR}" +
-                             $"{(registro.Activo ? "1" : "0")}";
-                writer.WriteLine(linea);
-            }
-
-            // Agregar entrada al índice
-            indice[registro.ID] = new EntradaIndice
-            {
-                Clave = registro.ID,
-                Posicion = lineNumber,
-                Activo = true
-            };
-
-            // Guardar índice actualizado
+            if (indice.ContainsKey(registro.ID)) throw new Exception($"Ya existe un registro con ID: {registro.ID}");
+            long n = File.ReadLines(rutaArchivoDatos, Encoding.UTF8).Count();
+            using StreamWriter w = new(rutaArchivoDatos, true, Encoding.UTF8);
+            w.WriteLine(Formatear(registro));
+            indice[registro.ID] = new EntradaIndice { Clave = registro.ID, Posicion = n, Activo = true };
             GuardarIndice();
         }
 
-        public void ModificarRegistro(string id, Registro nuevoRegistro)
+        public void ModificarRegistro(string id, Registro nuevo)
         {
-            if (!indice.ContainsKey(id))
-                throw new Exception($"No existe un registro con ID: {id}");
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                throw new Exception($"El registro con ID {id} está eliminado");
-
-            nuevoRegistro.ID = id;
-            nuevoRegistro.Activo = true;
-
-            // Leer todas las líneas
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            // Modificar la línea específica
-            if (entrada.Posicion < lineas.Length)
-            {
-                string nuevaLinea = $"{EscaparTexto(nuevoRegistro.ID)}{DELIMITADOR}" +
-                                  $"{EscaparTexto(nuevoRegistro.Nombre)}{DELIMITADOR}" +
-                                  $"{nuevoRegistro.Edad}{DELIMITADOR}" +
-                                  $"{EscaparTexto(nuevoRegistro.Email)}{DELIMITADOR}" +
-                                  $"{(nuevoRegistro.Activo ? "1" : "0")}";
-                lineas[entrada.Posicion] = nuevaLinea;
-            }
-
-            // Reescribir el archivo
+            if (!indice.TryGetValue(id, out var e)) throw new Exception($"No existe un registro con ID: {id}");
+            if (!e.Activo) throw new Exception($"El registro con ID {id} está eliminado.");
+            nuevo.ID = id; nuevo.Activo = true;
+            var lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
+            if (e.Posicion < lineas.Length) lineas[e.Posicion] = Formatear(nuevo);
             File.WriteAllLines(rutaArchivoDatos, lineas, Encoding.UTF8);
         }
 
         public bool EliminarRegistro(string id)
         {
-            if (!indice.ContainsKey(id))
-                return false;
-
-            EntradaIndice entrada = indice[id];
-
-            if (!entrada.Activo)
-                return false;
-
-            // Marcar como inactivo en el índice
-            entrada.Activo = false;
-
-            // Marcar como inactivo en el archivo
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            if (entrada.Posicion < lineas.Length)
+            if (!indice.TryGetValue(id, out var e) || !e.Activo) return false;
+            e.Activo = false;
+            var lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
+            if (e.Posicion < lineas.Length)
             {
-                Registro registro = ParsearLineaRegistro(lineas[entrada.Posicion]);
-                registro.Activo = false;
-
-                string nuevaLinea = $"{EscaparTexto(registro.ID)}{DELIMITADOR}" +
-                                  $"{EscaparTexto(registro.Nombre)}{DELIMITADOR}" +
-                                  $"{registro.Edad}{DELIMITADOR}" +
-                                  $"{EscaparTexto(registro.Email)}{DELIMITADOR}0";
-                lineas[entrada.Posicion] = nuevaLinea;
+                var r = Parsear(lineas[e.Posicion]);
+                r.Activo = false;
+                lineas[e.Posicion] = Formatear(r);
             }
-
             File.WriteAllLines(rutaArchivoDatos, lineas, Encoding.UTF8);
-
-            // Guardar índice actualizado
             GuardarIndice();
-
             return true;
         }
 
         public List<Registro> LeerTodosLosRegistros()
         {
-            List<Registro> registros = new List<Registro>();
-
-            string[] lineas = File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8);
-
-            foreach (string linea in lineas)
-            {
-                if (string.IsNullOrWhiteSpace(linea))
-                    continue;
-
-                Registro registro = ParsearLineaRegistro(linea);
-
-                if (registro.Activo)
-                {
-                    registros.Add(registro);
-                }
-            }
-
-            return registros;
+            return File.ReadAllLines(rutaArchivoDatos, Encoding.UTF8)
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .Select(Parsear)
+                .Where(r => r.Activo)
+                .ToList();
         }
 
         public int Reorganizar()
         {
-            List<Registro> registrosActivos = LeerTodosLosRegistros();
-            int registrosEliminados = indice.Count - registrosActivos.Count;
-
-            // Crear archivo temporal
-            string archivoTemp = rutaArchivoDatos + ".tmp";
-
+            var activos = LeerTodosLosRegistros();
+            int eliminados = indice.Count - activos.Count;
+            string tmp = rutaArchivoDatos + ".tmp";
             indice.Clear();
-
-            using (StreamWriter writer = new StreamWriter(archivoTemp, false, Encoding.UTF8))
+            using (StreamWriter w = new(tmp, false, Encoding.UTF8))
             {
-                long lineNumber = 0;
-
-                foreach (var registro in registrosActivos)
+                long n = 0;
+                foreach (var r in activos)
                 {
-                    string linea = $"{EscaparTexto(registro.ID)}{DELIMITADOR}" +
-                                 $"{EscaparTexto(registro.Nombre)}{DELIMITADOR}" +
-                                 $"{registro.Edad}{DELIMITADOR}" +
-                                 $"{EscaparTexto(registro.Email)}{DELIMITADOR}1";
-                    writer.WriteLine(linea);
-
-                    indice[registro.ID] = new EntradaIndice
-                    {
-                        Clave = registro.ID,
-                        Posicion = lineNumber,
-                        Activo = true
-                    };
-
-                    lineNumber++;
+                    w.WriteLine(Formatear(r));
+                    indice[r.ID] = new EntradaIndice { Clave = r.ID, Posicion = n++, Activo = true };
                 }
             }
-
-            // Reemplazar archivo original
             File.Delete(rutaArchivoDatos);
-            File.Move(archivoTemp, rutaArchivoDatos);
-
-            // Guardar índice reorganizado
+            File.Move(tmp, rutaArchivoDatos);
             GuardarIndice();
-
-            return registrosEliminados;
+            return eliminados;
         }
 
-        public Dictionary<string, EntradaIndice> ObtenerIndice()
-        {
-            return new Dictionary<string, EntradaIndice>(indice);
-        }
+        public Dictionary<string, EntradaIndice> ObtenerIndice() => new(indice);
 
+        //Privado s
         private void GuardarIndice()
         {
-            using (StreamWriter writer = new StreamWriter(rutaArchivoIndice, false, Encoding.UTF8))
-            {
-                foreach (var entrada in indice.Values)
-                {
-                    // Formato: Clave|Posicion|Activo
-                    string linea = $"{EscaparTexto(entrada.Clave)}{DELIMITADOR}" +
-                                 $"{entrada.Posicion}{DELIMITADOR}" +
-                                 $"{(entrada.Activo ? "1" : "0")}";
-                    writer.WriteLine(linea);
-                }
-            }
+            using StreamWriter w = new(rutaArchivoIndice, false, Encoding.UTF8);
+            foreach (var e in indice.Values)
+                w.WriteLine($"{Esc(e.Clave)}{D}{e.Posicion}{D}{(e.Activo ? "1" : "0")}");
         }
 
         private void CargarIndice()
         {
             indice.Clear();
-
-            string[] lineas = File.ReadAllLines(rutaArchivoIndice, Encoding.UTF8);
-
-            foreach (string linea in lineas)
+            foreach (string linea in File.ReadAllLines(rutaArchivoIndice, Encoding.UTF8))
             {
-                if (string.IsNullOrWhiteSpace(linea))
-                    continue;
-
-                string[] partes = linea.Split(DELIMITADOR);
-
-                if (partes.Length >= 3)
-                {
-                    EntradaIndice entrada = new EntradaIndice
+                if (string.IsNullOrWhiteSpace(linea)) continue;
+                var p = linea.Split(D);
+                if (p.Length >= 3)
+                    indice[Des(p[0])] = new EntradaIndice
                     {
-                        Clave = DesescaparTexto(partes[0]),
-                        Posicion = long.Parse(partes[1]),
-                        Activo = partes[2] == "1"
+                        Clave = Des(p[0]),
+                        Posicion = long.Parse(p[1]),
+                        Activo = p[2] == "1"
                     };
-
-                    indice[entrada.Clave] = entrada;
-                }
             }
         }
 
-        private Registro ParsearLineaRegistro(string linea)
+        private Registro Parsear(string linea)
         {
-            string[] partes = linea.Split(DELIMITADOR);
-
-            if (partes.Length < 5)
-                throw new FormatException($"Formato de línea inválido: {linea}");
-
+            var p = linea.Split(D);
+            if (p.Length < 5) throw new FormatException($"Línea inválida: {linea}");
             return new Registro
             {
-                ID = DesescaparTexto(partes[0]),
-                Nombre = DesescaparTexto(partes[1]),
-                Edad = int.Parse(partes[2]),
-                Email = DesescaparTexto(partes[3]),
-                Activo = partes[4] == "1"
+                ID = Des(p[0]),
+                Nombre = Des(p[1]),
+                Edad = int.Parse(p[2]),
+                Email = Des(p[3]),
+                Activo = p[4] == "1"
             };
         }
 
-        private string EscaparTexto(string texto)
-        {
-            // Escapar el delimitador si aparece en el texto
-            return texto.Replace(DELIMITADOR.ToString(), $"\\{DELIMITADOR}");
-        }
+        private string Formatear(Registro r) =>
+            $"{Esc(r.ID)}{D}{Esc(r.Nombre)}{D}{r.Edad}{D}{Esc(r.Email)}{D}{(r.Activo ? "1" : "0")}";
 
-        private string DesescaparTexto(string texto)
-        {
-            // Desescapar el delimitador
-            return texto.Replace($"\\{DELIMITADOR}", DELIMITADOR.ToString());
-        }
+        private string Esc(string t) => t.Replace(D.ToString(), $"\\{D}");
+        private string Des(string t) => t.Replace($"\\{D}", D.ToString());
     }
 }
