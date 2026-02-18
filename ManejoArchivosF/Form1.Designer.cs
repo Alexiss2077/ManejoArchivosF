@@ -27,7 +27,6 @@
         // ── Tab AccesoDirecto ───────────────────────────────────────
         private SplitContainer splitDirecto;
         private GroupBox grpArchInv, grpAcciones;
-       // private RadioButton rbTxt, rbCsv, rbJson, rbXml;
         private Button btnNuevoInv, btnAbrirInv, btnGuardarInv;
         private Button btnEliminarInv, btnCopiarInv, btnMoverInv, btnPropInv;
         private Button btnEliminarFila;
@@ -54,8 +53,6 @@
             MinimumSize = new Size(900, 600);
             Font = new Font("Segoe UI", 9F);
 
-            //  TAB CONTROL
-            // ══════════════════════════════════════════════════════
             tabControl = new TabControl { Dock = DockStyle.Fill };
             Controls.Add(tabControl);
 
@@ -72,23 +69,16 @@
             BuildTabIndexado();
         }
 
-        //  TAB 1 — BITÁCORA DE CAJA (SECUENCIAL)
         // ══════════════════════════════════════════════════════════
+        //  TAB 1 — BITÁCORA DE CAJA (SECUENCIAL)
         private void BuildTabSecuencial()
         {
-            splitSecuencial = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                SplitterDistance = 310,
-                Panel1MinSize = 290
-            };
+            splitSecuencial = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 310, Panel1MinSize = 290 };
             tabSecuencial.Controls.Add(splitSecuencial);
 
-            // ── Panel izquierdo ───
             var pnlLeft = new Panel { Dock = DockStyle.Fill, Padding = new Padding(6) };
             splitSecuencial.Panel1.Controls.Add(pnlLeft);
 
-            // Descripción del problema
             var lblProblema = new Label
             {
                 Text = "Problema: Una tienda necesita registrar todas las transacciones de caja en orden cronológico para auditoría. El archivo secuencial es ideal porque las entradas solo se agregan al final y se leen de corrido.",
@@ -97,21 +87,13 @@
                 TextAlign = ContentAlignment.TopLeft,
                 AutoSize = false,
                 Width = 285,
-                Height = 76,
+                Height = 100,
                 Top = 4,
                 Left = 4
             };
             pnlLeft.Controls.Add(lblProblema);
 
-            // GroupBox nueva transacción
-            grpNuevaEntrada = new GroupBox
-            {
-                Text = "Nueva Transacción",
-                Left = 4,
-                Top = 88,
-                Width = 285,
-                Height = 220
-            };
+            grpNuevaEntrada = new GroupBox { Text = "Nueva Transacción", Left = 4, Top = 110, Width = 285, Height = 220 };
             pnlLeft.Controls.Add(grpNuevaEntrada);
 
             int y = 22;
@@ -135,27 +117,10 @@
             btnAgregarTransaccion.Click += btnAgregarTransaccion_Click;
             grpNuevaEntrada.Controls.Add(btnAgregarTransaccion);
 
-            // GroupBox archivo
-            grpArchLog = new GroupBox
-            {
-                Text = "Archivo de Bitácora (.txt)",
-                Left = 4,
-                Top = 296,
-                Width = 285,
-                Height = 195
-            };
+            grpArchLog = new GroupBox { Text = "Archivo de Bitácora (.txt)", Left = 4, Top = 318, Width = 285, Height = 195 };
             pnlLeft.Controls.Add(grpArchLog);
 
-            lblArchBit = new Label
-            {
-                Text = "Sin archivo",
-                ForeColor = Color.Gray,
-                Left = 10,
-                Top = 20,
-                Width = 265,
-                AutoSize = false,
-                Font = new Font("Segoe UI", 8F, FontStyle.Italic)
-            };
+            lblArchBit = new Label { Text = "Sin archivo", ForeColor = Color.Gray, Left = 10, Top = 20, Width = 265, AutoSize = false, Font = new Font("Segoe UI", 8F, FontStyle.Italic) };
             grpArchLog.Controls.Add(lblArchBit);
 
             int by = 40;
@@ -163,7 +128,7 @@
             AddButton(grpArchLog, "📂 Abrir Bitácora", ref by, out btnAbrirBitacora, Color.FromArgb(0, 122, 204), btnAbrirBitacora_Click);
             AddButton(grpArchLog, "💾 Guardar Cambios", ref by, out btnGuardarBitacora, Color.FromArgb(0, 153, 76), btnGuardarBitacora_Click);
 
-            var pnlBtnsLog = new Panel { Left = 8, Top = by, Width = 265, Height = 30 };
+            var pnlBtnsLog = new Panel { Left = 8, Top = by, Width = 265, Height = 65 };
             grpArchLog.Controls.Add(pnlBtnsLog);
 
             btnEliminarBitacora = MiniBtn("🗑 Eliminar", Color.FromArgb(180, 50, 50), btnEliminarBitacora_Click);
@@ -175,11 +140,9 @@
             btnCopiarBitacora.Left = 66; btnCopiarBitacora.Top = 0;
             btnMoverBitacora.Left = 133; btnMoverBitacora.Top = 0;
             btnPropBitacora.Left = 0; btnPropBitacora.Top = 32; btnPropBitacora.Width = 130;
-            pnlBtnsLog.Height = 65;
 
             pnlBtnsLog.Controls.AddRange(new Control[] { btnEliminarBitacora, btnCopiarBitacora, btnMoverBitacora, btnPropBitacora });
 
-            // ── Panel derecho 
             var pnlRight = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -207,16 +170,11 @@
             pnlRight.Controls.Add(grpPropLog, 0, 1);
         }
 
-        // ═════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════
         //  TAB 2 — CATÁLOGO DE PRODUCTOS (ACCESO DIRECTO)
         private void BuildTabDirecto()
         {
-            splitDirecto = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                SplitterDistance = 290,
-                Panel1MinSize = 270
-            };
+            splitDirecto = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 290, Panel1MinSize = 270 };
             tabDirecto.Controls.Add(splitDirecto);
 
             var pnlLeft = new Panel { Dock = DockStyle.Fill, Padding = new Padding(6) };
@@ -224,39 +182,21 @@
 
             var lblProblema = new Label
             {
-                Text = "Problema: Una ferretería necesita un catálogo de productos donde pueda saltar directamente a cualquier artículo por su ID sin recorrer el archivo completo. Soporta TXT, CSV, JSON y XML.",
+                Text = "Problema: Una ferretería necesita un catálogo de productos donde pueda saltar directamente a cualquier artículo por su ID sin recorrer el archivo completo. Usa un archivo binario .dat con hash + FileStream.Seek().",
                 Font = new Font("Segoe UI", 8.5F, FontStyle.Italic),
                 ForeColor = Color.DimGray,
                 AutoSize = false,
                 Width = 270,
-                Height = 76,
+                Height = 100,
                 Top = 4,
                 Left = 4
             };
             pnlLeft.Controls.Add(lblProblema);
 
-            //grpFormato = new GroupBox { Text = "Formato de archivo", Left = 4, Top = 88, Width = 270, Height = 60 };
-            //pnlLeft.Controls.Add(grpFormato);
-
-            //rbTxt = new RadioButton { Text = "TXT", Left = 10, Top = 25, AutoSize = true, Checked = true };
-            //rbCsv = new RadioButton { Text = "CSV", Left = 65, Top = 25, AutoSize = true };
-            //rbJson = new RadioButton { Text = "JSON", Left = 115, Top = 25, AutoSize = true };
-            //rbXml = new RadioButton { Text = "XML", Left = 175, Top = 25, AutoSize = true };
-            //grpFormato.Controls.AddRange(new Control[] { rbTxt, rbCsv, rbJson, rbXml });
-
-            grpArchInv = new GroupBox { Text = "Gestión de Catálogo", Left = 4, Top = 155, Width = 270, Height = 225 };
+            grpArchInv = new GroupBox { Text = "Gestión de Catálogo (.dat)", Left = 4, Top = 110, Width = 270, Height = 225 };
             pnlLeft.Controls.Add(grpArchInv);
 
-            lblArchInv = new Label
-            {
-                Text = "Sin archivo",
-                ForeColor = Color.Gray,
-                Left = 8,
-                Top = 20,
-                Width = 250,
-                AutoSize = false,
-                Font = new Font("Segoe UI", 8F, FontStyle.Italic)
-            };
+            lblArchInv = new Label { Text = "Sin archivo", ForeColor = Color.Gray, Left = 8, Top = 20, Width = 250, AutoSize = false, Font = new Font("Segoe UI", 8F, FontStyle.Italic) };
             grpArchInv.Controls.Add(lblArchInv);
 
             int by = 40;
@@ -280,13 +220,12 @@
 
             pnlBtnsInv.Controls.AddRange(new Control[] { btnEliminarInv, btnCopiarInv, btnMoverInv, btnPropInv });
 
-            grpAcciones = new GroupBox { Text = "Fila seleccionada", Left = 4, Top = 388, Width = 270, Height = 55 };
+            grpAcciones = new GroupBox { Text = "Fila seleccionada", Left = 4, Top = 343, Width = 270, Height = 55 };
             pnlLeft.Controls.Add(grpAcciones);
 
             int ba = 20;
             AddButton(grpAcciones, "🗑 Eliminar fila seleccionada", ref ba, out btnEliminarFila, Color.FromArgb(180, 50, 50), btnEliminarFila_Click);
 
-            // Panel derecho
             var pnlRight = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -314,16 +253,11 @@
             pnlRight.Controls.Add(grpPropInv, 0, 1);
         }
 
-        //  TAB 3 — DIRECTORIO DE EMPLEADOS (INDEXADO)
         // ══════════════════════════════════════════════════════════
+        //  TAB 3 — DIRECTORIO DE EMPLEADOS (INDEXADO)
         private void BuildTabIndexado()
         {
-            splitIndexado = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                SplitterDistance = 310,
-                Panel1MinSize = 290
-            };
+            splitIndexado = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 310, Panel1MinSize = 290 };
             tabIndexado.Controls.Add(splitIndexado);
 
             var pnlLeft = new Panel { Dock = DockStyle.Fill, Padding = new Padding(6) };
@@ -336,22 +270,20 @@
                 ForeColor = Color.DimGray,
                 AutoSize = false,
                 Width = 285,
-                Height = 76,
+                Height = 100,
                 Top = 4,
                 Left = 4
             };
             pnlLeft.Controls.Add(lblProblema);
 
-            // Formato
-            var grpFmt = new GroupBox { Text = "Formato", Left = 4, Top = 88, Width = 285, Height = 50 };
+            var grpFmt = new GroupBox { Text = "Formato", Left = 4, Top = 110, Width = 285, Height = 50 };
             pnlLeft.Controls.Add(grpFmt);
             cmbFormatoIdx = new ComboBox { Left = 10, Top = 18, Width = 130, DropDownStyle = ComboBoxStyle.DropDownList };
             cmbFormatoIdx.Items.AddRange(new object[] { "TXT", "CSV", "XML" });
             cmbFormatoIdx.SelectedIndex = 0;
             grpFmt.Controls.Add(cmbFormatoIdx);
 
-            // Búsqueda rápida
-            grpBusqueda = new GroupBox { Text = "Búsqueda por ID (acceso directo vía índice)", Left = 4, Top = 144, Width = 285, Height = 60 };
+            grpBusqueda = new GroupBox { Text = "Búsqueda por ID (acceso directo vía índice)", Left = 4, Top = 166, Width = 285, Height = 60 };
             pnlLeft.Controls.Add(grpBusqueda);
 
             txtBuscarId = new TextBox { Left = 10, Top = 24, Width = 140, PlaceholderText = "ID del empleado..." };
@@ -370,8 +302,7 @@
             btnBuscarEmp.Click += btnBuscarEmp_Click;
             grpBusqueda.Controls.Add(btnBuscarEmp);
 
-            // Datos del empleado
-            grpDatosEmp = new GroupBox { Text = "Datos del Empleado", Left = 4, Top = 212, Width = 285, Height = 200 };
+            grpDatosEmp = new GroupBox { Text = "Datos del Empleado", Left = 4, Top = 234, Width = 285, Height = 200 };
             pnlLeft.Controls.Add(grpDatosEmp);
 
             int y = 22;
@@ -406,20 +337,10 @@
             };
             grpDatosEmp.Controls.Add(lblResultado);
 
-            // Gestión de archivo
-            grpArchIdx = new GroupBox { Text = "Gestión de Archivo Indexado", Left = 4, Top = 420, Width = 285, Height = 160 };
+            grpArchIdx = new GroupBox { Text = "Gestión de Archivo Indexado", Left = 4, Top = 442, Width = 285, Height = 160 };
             pnlLeft.Controls.Add(grpArchIdx);
 
-            lblArchDir = new Label
-            {
-                Text = "Sin archivo",
-                ForeColor = Color.Gray,
-                Left = 8,
-                Top = 20,
-                Width = 265,
-                AutoSize = false,
-                Font = new Font("Segoe UI", 8F, FontStyle.Italic)
-            };
+            lblArchDir = new Label { Text = "Sin archivo", ForeColor = Color.Gray, Left = 8, Top = 20, Width = 265, AutoSize = false, Font = new Font("Segoe UI", 8F, FontStyle.Italic) };
             grpArchIdx.Controls.Add(lblArchDir);
 
             int ba = 40;
@@ -427,7 +348,6 @@
             AddButton(grpArchIdx, "📂 Cargar Directorio", ref ba, out btnCargarDir, Color.FromArgb(0, 122, 204), btnCargarDir_Click);
             AddButton(grpArchIdx, "🔧 Reorganizar (purgar eliminados)", ref ba, out btnReorganizar, Color.FromArgb(130, 80, 0), btnReorganizar_Click);
 
-            // Panel derecho
             var pnlRight = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
