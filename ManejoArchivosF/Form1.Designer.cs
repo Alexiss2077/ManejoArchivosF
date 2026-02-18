@@ -26,8 +26,8 @@
 
         // ── Tab AccesoDirecto ───────────────────────────────────────
         private SplitContainer splitDirecto;
-        private GroupBox grpFormato, grpArchInv, grpAcciones;
-        private RadioButton rbTxt, rbCsv, rbJson, rbXml;
+        private GroupBox grpArchInv, grpAcciones;
+       // private RadioButton rbTxt, rbCsv, rbJson, rbXml;
         private Button btnNuevoInv, btnAbrirInv, btnGuardarInv;
         private Button btnEliminarInv, btnCopiarInv, btnMoverInv, btnPropInv;
         private Button btnEliminarFila;
@@ -235,14 +235,14 @@
             };
             pnlLeft.Controls.Add(lblProblema);
 
-            grpFormato = new GroupBox { Text = "Formato de archivo", Left = 4, Top = 88, Width = 270, Height = 60 };
-            pnlLeft.Controls.Add(grpFormato);
+            //grpFormato = new GroupBox { Text = "Formato de archivo", Left = 4, Top = 88, Width = 270, Height = 60 };
+            //pnlLeft.Controls.Add(grpFormato);
 
-            rbTxt = new RadioButton { Text = "TXT", Left = 10, Top = 25, AutoSize = true, Checked = true };
-            rbCsv = new RadioButton { Text = "CSV", Left = 65, Top = 25, AutoSize = true };
-            rbJson = new RadioButton { Text = "JSON", Left = 115, Top = 25, AutoSize = true };
-            rbXml = new RadioButton { Text = "XML", Left = 175, Top = 25, AutoSize = true };
-            grpFormato.Controls.AddRange(new Control[] { rbTxt, rbCsv, rbJson, rbXml });
+            //rbTxt = new RadioButton { Text = "TXT", Left = 10, Top = 25, AutoSize = true, Checked = true };
+            //rbCsv = new RadioButton { Text = "CSV", Left = 65, Top = 25, AutoSize = true };
+            //rbJson = new RadioButton { Text = "JSON", Left = 115, Top = 25, AutoSize = true };
+            //rbXml = new RadioButton { Text = "XML", Left = 175, Top = 25, AutoSize = true };
+            //grpFormato.Controls.AddRange(new Control[] { rbTxt, rbCsv, rbJson, rbXml });
 
             grpArchInv = new GroupBox { Text = "Gestión de Catálogo", Left = 4, Top = 155, Width = 270, Height = 225 };
             pnlLeft.Controls.Add(grpArchInv);

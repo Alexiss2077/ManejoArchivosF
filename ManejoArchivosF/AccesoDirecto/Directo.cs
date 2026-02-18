@@ -1,38 +1,40 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Windows.Forms;
-using System.Xml.Linq;
+﻿using System.Windows.Forms;
 
 namespace ManejoArchivosF.AccesoDirecto
 {
     /// <summary>
-    /// Organización de Acceso Directo: se puede saltar directamente a cualquier registro por su ID
-    /// sin recorrer el archivo de forma secuencial.
-    /// Caso de uso: Catálogo de productos de ferretería acceso por código de artículo.
+    /// Organización de Acceso Directo REAL.
+    /// Usa función hash (id % totalSlots) + sondeo lineal + FileStream.Seek()
+    /// para leer y escribir cualquier registro en O(1) sin recorrer el archivo.
+    ///
+    /// Formato: archivo binario .dat con registros de tamaño fijo (256 bytes).
+    /// Caso de uso: Catálogo de productos de ferretería — acceso por código de artículo.
     /// </summary>
     public class Directo
     {
+        // ── Estado ────────────────────────────────────────────────────────────
         public string ArchivoActual { get; private set; } = string.Empty;
 
+        private HashFileManager? _hash = null;
+
+        // ── Clase pública Registro (mantiene compatibilidad con Form1) ─────────
         public class Registro
         {
             public int Id { get; set; }
             public string Contenido { get; set; } = string.Empty;
         }
 
-        //CONFIGURAR GRID
+        // ── Configurar grids ──────────────────────────────────────────────────
         public void ConfigurarDataGridViews(DataGridView dgvDatos, DataGridView dgvPropiedades)
         {
             dgvDatos.AllowUserToAddRows = true;
-            dgvDatos.AllowUserToDeleteRows = true;
+            dgvDatos.AllowUserToDeleteRows = false;
             dgvDatos.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             dgvDatos.Columns.Clear();
             dgvDatos.Columns.Add("Id", "Código de producto");
             dgvDatos.Columns.Add("Contenido", "Descripción | Precio | Stock");
+            dgvDatos.Columns.Add("Slot", "Slot hash");
+            dgvDatos.Columns["Slot"]!.ReadOnly = true;
 
             dgvPropiedades.AllowUserToAddRows = false;
             dgvPropiedades.AllowUserToDeleteRows = false;
@@ -42,267 +44,319 @@ namespace ManejoArchivosF.AccesoDirecto
             dgvPropiedades.Columns.Add("Valor", "Valor");
         }
 
-        //OBTENER REGISTROS DESDE GRI
+        // ── Obtener registros desde el grid ───────────────────────────────────
         public List<Registro> ObtenerRegistrosDesdeGrid(DataGridView grid)
         {
             List<Registro> registros = new();
-
             foreach (DataGridViewRow row in grid.Rows)
             {
                 if (row.IsNewRow) continue;
-
-                if (!int.TryParse(row.Cells[0].Value?.ToString(), out int id) || id <= 0)
-                    continue;
-
+                if (!int.TryParse(row.Cells[0].Value?.ToString(), out int id) || id <= 0) continue;
                 string contenido = row.Cells[1].Value?.ToString()?.Trim() ?? string.Empty;
                 registros.Add(new Registro { Id = id, Contenido = contenido });
             }
-
             return registros.OrderBy(r => r.Id).ToList();
         }
 
-        //CARGAR REGISTROS EN GRID
-        public void CargarRegistrosEnGrid(IEnumerable<Registro> registros, DataGridView grid)
+        // ── Refrescar grid ────────────────────────────────────────────────────
+        private void RefrescarGrid(DataGridView grid)
         {
             grid.Rows.Clear();
-            foreach (Registro registro in registros.OrderBy(r => r.Id))
-                grid.Rows.Add(registro.Id, registro.Contenido);
-        }
+            if (_hash == null) return;
 
-        //CSV HELPERS
-        private string EscapeCsv(string value)
-        {
-            string escaped = value.Replace("\"", "\"\"");
-            return $"\"{escaped}\"";
-        }
-
-        private string LimpiarComillasCsv(string value)
-        {
-            string trimmed = value.Trim();
-            if (trimmed.StartsWith('"') && trimmed.EndsWith('"') && trimmed.Length >= 2)
-                trimmed = trimmed[1..^1].Replace("\"\"", "\"");
-            return trimmed;
-        }
-
-        private string[] ParseCsvLine(string line)
-        {
-            List<string> values = new();
-            StringBuilder current = new();
-            bool inQuotes = false;
-
-            foreach (char c in line)
+            foreach (RegistroDirecto r in _hash.ReadAll())
             {
-                if (c == '"') { inQuotes = !inQuotes; current.Append(c); continue; }
-                if (c == ',' && !inQuotes) { values.Add(current.ToString()); current.Clear(); continue; }
-                current.Append(c);
-            }
-            values.Add(current.ToString());
-            return values.ToArray();
-        }
-
-        //   //////////////////////LECTURA GENERAL
-        public List<Registro> LeerRegistros(string rutaArchivo)
-        {
-            string extension = Path.GetExtension(rutaArchivo).ToLowerInvariant();
-            return extension switch
-            {
-                ".txt" => LeerTxt(rutaArchivo),
-                ".csv" => LeerCsv(rutaArchivo),
-                ".json" => LeerJson(rutaArchivo),
-                ".xml" => LeerXml(rutaArchivo),
-                _ => throw new InvalidOperationException("Formato no soportado. Use TXT, CSV, JSON o XML.")
-            };
-        }
-
-        // GUARDADO GENERAL
-        public void GuardarRegistros(string rutaArchivo, List<Registro> registros)
-        {
-            string extension = Path.GetExtension(rutaArchivo).ToLowerInvariant();
-            switch (extension)
-            {
-                case ".txt": GuardarTxt(rutaArchivo, registros); break;
-                case ".csv": GuardarCsv(rutaArchivo, registros); break;
-                case ".json": GuardarJson(rutaArchivo, registros); break;
-                case ".xml": GuardarXml(rutaArchivo, registros); break;
-                default: throw new InvalidOperationException("Formato no soportado.");
+                var (_, slot) = _hash.Search(r.Id);
+                // El grid puede tener 2 columnas (Form1 original) o 3 (con Slot)
+                if (grid.Columns.Count >= 3)
+                    grid.Rows.Add(r.Id, r.Contenido, slot);
+                else
+                    grid.Rows.Add(r.Id, r.Contenido);
             }
         }
 
-        //          TXT 
-        private List<Registro> LeerTxt(string rutaArchivo)
-        {
-            List<Registro> registros = new();
-            if (!File.Exists(rutaArchivo)) return registros;
-
-            foreach (string line in File.ReadAllLines(rutaArchivo, Encoding.UTF8))
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                string[] partes = line.Split('|', 2);
-                if (partes.Length < 2 || !int.TryParse(partes[0], out int id) || id <= 0) continue;
-                registros.Add(new Registro { Id = id, Contenido = partes[1] });
-            }
-            return registros;
-        }
-
-        private void GuardarTxt(string rutaArchivo, List<Registro> registros)
-        {
-            File.WriteAllLines(rutaArchivo,
-                registros.OrderBy(r => r.Id).Select(r => $"{r.Id}|{r.Contenido}"),
-                Encoding.UTF8);
-        }
-
-        // CSV
-        private List<Registro> LeerCsv(string rutaArchivo)
-        {
-            List<Registro> registros = new();
-            if (!File.Exists(rutaArchivo)) return registros;
-
-            foreach (string linea in File.ReadAllLines(rutaArchivo, Encoding.UTF8).Skip(1))
-            {
-                if (string.IsNullOrWhiteSpace(linea)) continue;
-                string[] campos = ParseCsvLine(linea);
-                if (campos.Length < 2) continue;
-                if (!int.TryParse(LimpiarComillasCsv(campos[0]), out int id) || id <= 0) continue;
-                registros.Add(new Registro { Id = id, Contenido = LimpiarComillasCsv(campos[1]) });
-            }
-            return registros;
-        }
-
-        private void GuardarCsv(string rutaArchivo, List<Registro> registros)
-        {
-            List<string> lineas = new() { "Id,Contenido" };
-            foreach (Registro r in registros.OrderBy(r => r.Id))
-                lineas.Add($"{r.Id},{EscapeCsv(r.Contenido)}");
-            File.WriteAllLines(rutaArchivo, lineas, Encoding.UTF8);
-        }
-
-        //             JSON
-        private List<Registro> LeerJson(string rutaArchivo)
-        {
-            if (!File.Exists(rutaArchivo)) return new();
-            string json = File.ReadAllText(rutaArchivo, Encoding.UTF8);
-            if (string.IsNullOrWhiteSpace(json)) return new();
-            return JsonSerializer.Deserialize<List<Registro>>(json)?.Where(r => r.Id > 0).ToList() ?? new();
-        }
-
-        private void GuardarJson(string rutaArchivo, List<Registro> registros)
-        {
-            File.WriteAllText(rutaArchivo,
-                JsonSerializer.Serialize(registros.OrderBy(r => r.Id), new JsonSerializerOptions { WriteIndented = true }),
-                Encoding.UTF8);
-        }
-
-        //             XML
-        private List<Registro> LeerXml(string rutaArchivo)
-        {
-            if (!File.Exists(rutaArchivo)) return new();
-            XDocument doc = XDocument.Load(rutaArchivo);
-            return (doc.Root?.Elements("Registro")
-                .Select(x => new Registro
-                {
-                    Id = (int?)x.Element("Id") ?? 0,
-                    Contenido = (string?)x.Element("Contenido") ?? string.Empty
-                })
-                .Where(r => r.Id > 0) ?? Enumerable.Empty<Registro>()).ToList();
-        }
-
-        private void GuardarXml(string rutaArchivo, List<Registro> registros)
-        {
-            new XDocument(
-                new XElement("Registros",
-                    registros.OrderBy(r => r.Id).Select(r =>
-                        new XElement("Registro",
-                            new XElement("Id", r.Id),
-                            new XElement("Contenido", r.Contenido))))).Save(rutaArchivo);
-        }
-
-        //   CREAR
+        // ── CREAR archivo .dat ────────────────────────────────────────────────
         public void CrearArchivo(string rutaArchivo, DataGridView dgvDatos)
         {
-            List<Registro> registros = ObtenerRegistrosDesdeGrid(dgvDatos);
-            GuardarRegistros(rutaArchivo, registros);
-            ArchivoActual = rutaArchivo;
-            MessageBox.Show("Catálogo creado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try
+            {
+                // Pedir número de slots al usuario
+                int slots = PedirSlots();
+                if (slots <= 0) return;
+
+                HashFileManager.CreateFile(rutaArchivo, slots);
+                _hash = new HashFileManager(rutaArchivo);
+                ArchivoActual = rutaArchivo;
+
+                // Insertar los registros que ya había en el grid
+                int insertados = 0, errores = 0;
+                foreach (Registro reg in ObtenerRegistrosDesdeGrid(dgvDatos))
+                {
+                    int resultado = _hash.Insert(reg.Id, reg.Contenido);
+                    if (resultado >= 0) insertados++;
+                    else errores++;
+                }
+
+                RefrescarGrid(dgvDatos);
+
+                MessageBox.Show(
+                    $"Catálogo creado con {slots} slots.\n" +
+                    $"Registros insertados: {insertados}" +
+                    (errores > 0 ? $"\nErrores (IDs duplicados o archivo lleno): {errores}" : ""),
+                    "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al crear el catálogo: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
-        //    ABRIR
+        // ── ABRIR archivo .dat ────────────────────────────────────────────────
         public void AbrirArchivo(string rutaArchivo, DataGridView dgvDatos)
         {
-            ArchivoActual = rutaArchivo;
-            CargarRegistrosEnGrid(LeerRegistros(rutaArchivo), dgvDatos);
-            MessageBox.Show("Catálogo cargado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try
+            {
+                var (valid, _) = HashFileManager.ReadHeader(rutaArchivo);
+                if (!valid)
+                {
+                    MessageBox.Show("El archivo seleccionado no es un catálogo de acceso directo (.dat) válido.",
+                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                _hash = new HashFileManager(rutaArchivo);
+                ArchivoActual = rutaArchivo;
+                RefrescarGrid(dgvDatos);
+
+                MessageBox.Show(
+                    $"Catálogo cargado correctamente.\n" +
+                    $"Slots totales: {_hash.TotalSlots}\n" +
+                    $"Registros encontrados: {dgvDatos.Rows.Count}",
+                    "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al abrir el catálogo: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
-        //        MODIFICAR 
+        // ── GUARDAR CAMBIOS (insertar o actualizar según corresponda) ─────────
         public void ModificarArchivo(DataGridView dgvDatos)
         {
-            if (string.IsNullOrWhiteSpace(ArchivoActual) || !File.Exists(ArchivoActual))
+            if (!VerificarArchivoAbierto()) return;
+
+            int insertados = 0, actualizados = 0, errores = 0;
+
+            try
             {
-                MessageBox.Show("Primero abra o cree un catálogo.", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                foreach (DataGridViewRow row in dgvDatos.Rows)
+                {
+                    if (row.IsNewRow) continue;
+                    if (!int.TryParse(row.Cells[0].Value?.ToString(), out int id) || id <= 0)
+                    { errores++; continue; }
+
+                    string contenido = row.Cells[1].Value?.ToString()?.Trim() ?? string.Empty;
+
+                    var (existente, _) = _hash!.Search(id);
+                    if (existente == null)
+                    {
+                        int slot = _hash.Insert(id, contenido);
+                        if (slot >= 0) insertados++;
+                        else errores++;
+                    }
+                    else
+                    {
+                        if (_hash.Update(id, contenido)) actualizados++;
+                        else errores++;
+                    }
+                }
+
+                RefrescarGrid(dgvDatos);
+                MessageBox.Show(
+                    $"Insertados: {insertados}\nActualizados: {actualizados}" +
+                    (errores > 0 ? $"\nErrores: {errores}" : ""),
+                    "Catálogo actualizado", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            GuardarRegistros(ArchivoActual, ObtenerRegistrosDesdeGrid(dgvDatos));
-            MessageBox.Show("Catálogo actualizado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al guardar cambios: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
-        ///ELIMINAR FILA 
+        // ── ELIMINAR FILA seleccionada (tombstone en disco) ───────────────────
         public void EliminarContenido(DataGridView dgvDatos)
         {
+            if (!VerificarArchivoAbierto()) return;
+
             if (dgvDatos.CurrentRow == null || dgvDatos.CurrentRow.IsNewRow)
             {
-                MessageBox.Show("Seleccione una fila para eliminar.", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Seleccione una fila para eliminar.", "Advertencia",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            dgvDatos.Rows.RemoveAt(dgvDatos.CurrentRow.Index);
-            ModificarArchivo(dgvDatos);
+
+            if (!int.TryParse(dgvDatos.CurrentRow.Cells[0].Value?.ToString(), out int id) || id <= 0)
+            {
+                MessageBox.Show("El Id de la fila seleccionada no es válido.", "Advertencia",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (_hash!.Delete(id))
+            {
+                RefrescarGrid(dgvDatos);
+                MessageBox.Show(
+                    $"Producto Id={id} eliminado.\n(Solo se marcó el slot como ELIMINADO en disco — tombstone.)",
+                    "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                MessageBox.Show($"No se encontró el producto con Id={id}.", "Advertencia",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
-        //              ELIMINAR ARCHIVO
+        // ── ELIMINAR archivo físico ───────────────────────────────────────────
         public void EliminarArchivo(string rutaArchivo)
         {
             if (!File.Exists(rutaArchivo))
             {
-                MessageBox.Show("El archivo no existe.", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("El archivo no existe.", "Advertencia",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             File.Delete(rutaArchivo);
-            ArchivoActual = string.Empty;
-            MessageBox.Show("Catálogo eliminado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (ArchivoActual == rutaArchivo) { _hash = null; ArchivoActual = string.Empty; }
+            MessageBox.Show("Catálogo eliminado exitosamente.", "Éxito",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        //COPIAR 
+        // ── COPIAR archivo ────────────────────────────────────────────────────
         public void CopiarArchivo(string rutaOrigen, string rutaDestino)
         {
             File.Copy(rutaOrigen, rutaDestino, true);
-            MessageBox.Show("Catálogo copiado exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Catálogo copiado exitosamente.", "Éxito",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        //        MOVER 
+        // ── MOVER archivo ─────────────────────────────────────────────────────
         public void MoverArchivo(string rutaOrigen, string rutaDestino)
         {
             File.Move(rutaOrigen, rutaDestino, true);
-            ArchivoActual = rutaDestino;
-            MessageBox.Show("Catálogo movido exitosamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (ArchivoActual == rutaOrigen)
+            {
+                ArchivoActual = rutaDestino;
+                _hash = new HashFileManager(rutaDestino);
+            }
+            MessageBox.Show("Catálogo movido exitosamente.", "Éxito",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        //    PROPIEDADES 
+        // ── VER PROPIEDADES ───────────────────────────────────────────────────
         public void VerPropiedades(string rutaArchivo, DataGridView dgvPropiedades)
         {
             FileInfo info = new(rutaArchivo);
             dgvPropiedades.Rows.Clear();
-            dgvPropiedades.Rows.Add("Tamaño", info.Length + " bytes");
+
+            // Propiedades del sistema de archivos
             dgvPropiedades.Rows.Add("Nombre", info.Name);
-            dgvPropiedades.Rows.Add("Fecha de creación", info.CreationTime.ToString());
+            dgvPropiedades.Rows.Add("Tamaño", FormatBytes(info.Length));
             dgvPropiedades.Rows.Add("Extensión", info.Extension);
+            dgvPropiedades.Rows.Add("Fecha de creación", info.CreationTime.ToString());
             dgvPropiedades.Rows.Add("Último acceso", info.LastAccessTime.ToString());
             dgvPropiedades.Rows.Add("Última modificación", info.LastWriteTime.ToString());
             dgvPropiedades.Rows.Add("Atributos", info.Attributes.ToString());
             dgvPropiedades.Rows.Add("Ubicación", info.FullName);
             dgvPropiedades.Rows.Add("Carpeta contenedora", info.DirectoryName);
 
-            // Mostrar cantidad de registros (acceso directo: contar sin procesar todo)
-            int total = LeerRegistros(rutaArchivo).Count;
-            dgvPropiedades.Rows.Add("Total de productos", total.ToString());
+            // Propiedades del esquema hash
+            var (valid, slots) = HashFileManager.ReadHeader(rutaArchivo);
+            if (valid)
+            {
+                var hfm = new HashFileManager(rutaArchivo);
+                var (ocu, del, vac) = hfm.GetStats();
+
+                dgvPropiedades.Rows.Add("─── Hash ───────────", "──────────────────");
+                dgvPropiedades.Rows.Add("Total de slots", slots.ToString());
+                dgvPropiedades.Rows.Add("Tamaño por registro", "256 bytes (fijo)");
+                dgvPropiedades.Rows.Add("Registros ocupados", ocu.ToString());
+                dgvPropiedades.Rows.Add("Registros eliminados", del.ToString());
+                dgvPropiedades.Rows.Add("Slots vacíos", vac.ToString());
+                dgvPropiedades.Rows.Add("Factor de carga", $"{(double)ocu / slots:P1}");
+                dgvPropiedades.Rows.Add("Función hash", "id % totalSlots");
+                dgvPropiedades.Rows.Add("Manejo colisiones", "Sondeo lineal");
+                dgvPropiedades.Rows.Add("Total de productos", ocu.ToString());
+            }
         }
+
+        // ── Helpers privados ──────────────────────────────────────────────────
+
+        private bool VerificarArchivoAbierto()
+        {
+            if (_hash != null && File.Exists(ArchivoActual)) return true;
+            MessageBox.Show("Primero cree o abra un catálogo (.dat).", "Advertencia",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        /// <summary>Muestra un mini diálogo para pedir el número de slots.</summary>
+        private static int PedirSlots()
+        {
+            using Form dlg = new()
+            {
+                Text = "Configurar catálogo de acceso directo",
+                Width = 360,
+                Height = 160,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+
+            var lbl = new Label
+            {
+                Text = "Total de slots (número primo recomendado):",
+                Left = 10,
+                Top = 14,
+                Width = 320,
+                AutoSize = false
+            };
+            var num = new NumericUpDown
+            {
+                Left = 10,
+                Top = 38,
+                Width = 110,
+                Minimum = 7,
+                Maximum = 9973,
+                Value = 101
+            };
+            var lblInfo = new Label
+            {
+                Text = "Sugeridos: 101, 251, 503, 1009, 2003",
+                Left = 130,
+                Top = 41,
+                Width = 210,
+                ForeColor = System.Drawing.Color.DimGray,
+                Font = new System.Drawing.Font("Segoe UI", 8F)
+            };
+            var ok = new Button { Text = "Crear", DialogResult = DialogResult.OK, Left = 10, Top = 78, Width = 80 };
+            var can = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Left = 100, Top = 78, Width = 80 };
+
+            dlg.Controls.AddRange(new System.Windows.Forms.Control[] { lbl, num, lblInfo, ok, can });
+            dlg.AcceptButton = ok;
+            dlg.CancelButton = can;
+
+            return dlg.ShowDialog() == DialogResult.OK ? (int)num.Value : -1;
+        }
+
+        private static string FormatBytes(long bytes) => bytes switch
+        {
+            < 1024 => $"{bytes} B",
+            < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+            _ => $"{bytes / (1024.0 * 1024):F2} MB"
+        };
     }
 }

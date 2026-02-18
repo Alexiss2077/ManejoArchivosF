@@ -177,28 +177,28 @@ namespace ManejoArchivosF
 
         //  TAB 2 — CATÁLOGO DE PRODUCTOS (ACCESO DIRECTO)
 
-        private string ExtensionSeleccionada()
-        {
-            if (rbCsv.Checked) return ".csv";
-            if (rbJson.Checked) return ".json";
-            if (rbXml.Checked) return ".xml";
-            return ".txt";
-        }
+        //private string ExtensionSeleccionada()
+        //{
+        //    if (rbCsv.Checked) return ".csv";
+        //    if (rbJson.Checked) return ".json";
+        //    if (rbXml.Checked) return ".xml";
+        //    return ".txt";
+        //}
 
-        private string FiltroArchivo()
-        {
-            if (rbCsv.Checked) return "CSV (*.csv)|*.csv";
-            if (rbJson.Checked) return "JSON (*.json)|*.json";
-            if (rbXml.Checked) return "XML (*.xml)|*.xml";
-            return "Texto (*.txt)|*.txt";
-        }
+        //private string FiltroArchivo()
+        //{
+        //    if (rbCsv.Checked) return "CSV (*.csv)|*.csv";
+        //    if (rbJson.Checked) return "JSON (*.json)|*.json";
+        //    if (rbXml.Checked) return "XML (*.xml)|*.xml";
+        //    return "Texto (*.txt)|*.txt";
+        //}
 
         private void btnNuevoInv_Click(object? sender, EventArgs e)
         {
             using var dlg = new SaveFileDialog
             {
-                Title = "Crear catálogo de productos",
-                Filter = FiltroArchivo(),
+                Title = "Crear catálogo de productos (acceso directo)",
+                Filter = "Catálogo de acceso directo (*.dat)|*.dat",
                 FileName = "catalogo_productos"
             };
 
@@ -217,12 +217,14 @@ namespace ManejoArchivosF
             lblArchInv.ForeColor = Color.DarkGreen;
         }
 
+
+
         private void btnAbrirInv_Click(object? sender, EventArgs e)
         {
             using var dlg = new OpenFileDialog
             {
-                Title = "Abrir catálogo",
-                Filter = "Todos los formatos|*.txt;*.csv;*.json;*.xml|" + FiltroArchivo()
+                Title = "Abrir catálogo de acceso directo",
+                Filter = "Catálogo de acceso directo (*.dat)|*.dat"
             };
 
             if (dlg.ShowDialog() != DialogResult.OK) return;
@@ -232,6 +234,8 @@ namespace ManejoArchivosF
             lblArchInv.ForeColor = Color.DarkGreen;
             _directo.VerPropiedades(dlg.FileName, dgvPropInventario);
         }
+
+
 
         private void btnGuardarInv_Click(object? sender, EventArgs e)
         {
@@ -261,6 +265,7 @@ namespace ManejoArchivosF
             lblArchInv.ForeColor = Color.Gray;
         }
 
+
         private void btnCopiarInv_Click(object? sender, EventArgs e)
         {
             if (string.IsNullOrWhiteSpace(_directo.ArchivoActual)) return;
@@ -268,13 +273,16 @@ namespace ManejoArchivosF
             using var dlg = new SaveFileDialog
             {
                 Title = "Copiar catálogo a...",
-                Filter = FiltroArchivo(),
+                Filter = "Catálogo de acceso directo (*.dat)|*.dat",
                 FileName = "copia_" + Path.GetFileName(_directo.ArchivoActual)
             };
 
             if (dlg.ShowDialog() != DialogResult.OK) return;
             _directo.CopiarArchivo(_directo.ArchivoActual, dlg.FileName);
         }
+
+
+
 
         private void btnMoverInv_Click(object? sender, EventArgs e)
         {
@@ -283,7 +291,7 @@ namespace ManejoArchivosF
             using var dlg = new SaveFileDialog
             {
                 Title = "Mover catálogo a...",
-                Filter = FiltroArchivo(),
+                Filter = "Catálogo de acceso directo (*.dat)|*.dat",
                 FileName = Path.GetFileName(_directo.ArchivoActual)
             };
 
@@ -291,6 +299,8 @@ namespace ManejoArchivosF
             _directo.MoverArchivo(_directo.ArchivoActual, dlg.FileName);
             lblArchInv.Text = Path.GetFileName(dlg.FileName);
         }
+
+
 
         private void btnPropInv_Click(object? sender, EventArgs e)
         {
